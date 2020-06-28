@@ -11,89 +11,63 @@ import math
 VECTOR_DIMENSION = 9
 
 
-def round_down(vector_1, model, index):
-
-    if index == len(vector_1):
-        if model.decision_function(np.array([vector_1])) < 0:
-            return vector_1
-        return None
-
-    # copy the vector
-    vector_2 = vector_1.copy()
-
-    # Round in both directions
-    vector_1[index] = math.floor(vector_1[index])
-    vector_2[index] = math.ceil(vector_2[index])
-
-    # Compute the 'cost'
-    cost1 = model.decision_function(np.array([vector_1]))[0]
-    cost2 = model.decision_function(np.array([vector_2]))[0]
-
-    # Decide to which leaf we will expand
-    if cost1 <= cost2:
-        result = round_down(vector_1, model, index+1)
-        if result is None:
-            result = round_down(vector_2, model, index+1)
-            if result is None:
-                return None
-            else:
-                return result
-        else:
-            return result
-    else:
-        result = round_down(vector_2, model, index + 1)
-        if result is None:
-            result = round_down(vector_1, model, index + 1)
-            if result is None:
-                return None
-            else:
-                return result
-        else:
-            return result
-
-
-def round_up(vector_1, model, index):
-    if index == len(vector_1):
-        if model.decision_function(np.array([vector_1])) > 0:
-            return vector_1
-        return None
-
-    # copy the vector
-    vector_2 = vector_1.copy()
-    # Round in both directions
-    vector_1[index] = math.floor(vector_1[index])
-    vector_2[index] = math.ceil(vector_2[index])
-
-    # Compute the 'cost'
-    cost1 = model.decision_function(np.array([vector_1]))[0]
-    cost2 = model.decision_function(np.array([vector_2]))[0]
-
-    # Decide to which leaf we will expand
-    if cost1 <= cost2:
-        result = round_up(vector_2, model, index + 1)
-        if result is None:
-            result = round_up(vector_1, model, index + 1)
-            if result is None:
-                return None
-            else:
-                return result
-        else:
-            return result
-    else:
-        result = round_up(vector_1, model, index + 1)
-        if result is None:
-            result = round_up(vector_2, model, index + 1)
-            if result is None:
-                return None
-            else:
-                return result
-        else:
-            return result
-
-
-def rounding(data, model):
+def descent(x_fc, x_sc, w, b, y, index):
     """
-    Round the counterfactual explanations to whole integers.
+    A function to choose the right sub-tree in the decision tree.
+
+    :param x_fc: The 'first choice' vector. A vector with better fitting costs.
+    :param x_sc: The 'second choice' vector.  A vector with better less fitting costs.
+    :param w: The weight-vector of our logistic regression
+    :param b: The bias of our logistic regression
+    :param y: The label for 'x'
+    :param index: The index, for the element that shall be rounded.
+    :return: The correct leaf from the decision tree.
+    """
+    result = rounding(x_fc, w, b, y, index + 1)
+    if result is None:
+        return rounding(x_sc, w, b, y, index + 1)
+    else:
+        return result
+
+
+def rounding(x, w, b, y, index):
+    """
+    A function to produce a decision-tree in order to get a correctly
+    rounded integer vector with respect to its class.
+
+    :param x: The counterfactual that shall be rounded
+    :param w: The weight-vector of our logistic regression
+    :param b: The bias of our logistic regression
+    :param y: The label for 'x'
+    :param index: The index, for the element that shall be rounded.
+    :return: A counterfactual with only integer entries.
+    """
+    if index == len(x):
+        if int(w @ x + b > 0) == y:
+            return x
+        else:
+            return None
+    x_copy = x.copy()
+    x[index] = math.floor(x[index])
+    x_copy[index] = math.ceil(x_copy[index])
+    dist1 = w @ x + b
+    dist2 = w @ x_copy + b
+    if y == 0:
+        if dist1 <= dist2:
+            return descent(x, x_copy, w, b, y, index)
+        else:
+            return descent(x_copy, x, w, b, y, index)
+    else:
+        if dist1 >= dist2:
+            return descent(x, x_copy, w, b, y, index)
+        else:
+            return descent(x_copy, x, w, b, y, index)
+
+
+def rounding_procedure(data, model):
+    """
+    Initialize the rounding process for each counterfactual in 'data'
+    and return the changes.
 
     :param data: 'dict'
                  A dictionary divided in valid and non-valid counterfactuals with:
@@ -113,11 +87,8 @@ def rounding(data, model):
     for sub_dataset in ["valid_cf", "non_valid_cf"]:
         new_cfs = []
         for i, x_cf in enumerate(data[sub_dataset]["x_cf"]):
-            if data[sub_dataset]["y_cf"][i] == 1:
-                x_cf = round_up(x_cf, model, 0)
-            else:
-                x_cf = round_down(x_cf, model, 0)
-            new_cfs.append(x_cf)
+            x_cf_rounded = rounding(x_cf, model.coef_[0], model.intercept_, data[sub_dataset]["y_cf"][i], 0)
+            new_cfs.append(x_cf_rounded)
         data[sub_dataset]["x_cf"] = new_cfs
 
     return data
@@ -420,11 +391,11 @@ def main():
     results.append(result_npa)
 
     # compute counterfactuals with relaxation
-    result_wr = rounding(process_data(log_reg, X_test, cp.SCS, "ILP - wr"), log_reg)
+    result_wr = rounding_procedure(process_data(log_reg, X_test, cp.SCS, "ILP - wr"), log_reg)
     results.append(result_wr)
 
     # compute counterfactuals with relaxation but without protected attributes
-    result_wr_npa = rounding(process_data(log_reg, X_test, cp.SCS, "ILP - wr - npa", False, False), log_reg)
+    result_wr_npa = rounding_procedure(process_data(log_reg, X_test, cp.SCS, "ILP - wr - npa", False, False), log_reg)
     results.append(result_wr_npa)
 
     # export results to csv files for further investigations

@@ -311,12 +311,12 @@ def get_data():
                                                                                          '%Y-%m-%d %H:%M:%S')).total_seconds() / 3600)
                    for jail_in, jail_out in zip(filtered_data["c_jail_in"], filtered_data["c_jail_out"])]
 
-    # Sex: 1 man, 0 women
     def categorize(to_compare, options):
         for i in range(len(options)):
             if to_compare == options[i]:
                 return i
 
+    # Sex: 1 man, 0 women
     sex = [categorize(gender, ["Female", "Male"]) for gender in filtered_data["sex"]]
 
     ''' Race
@@ -350,7 +350,6 @@ def get_data():
     X_train, X_test, y_train, y_test = train_test_split(pred_vars, response_vars
                                                         , test_size=0.33, random_state=1337)
 
-    # Use numpy arrays for ceml
     X_train = np.array(X_train)
     X_test = np.array(X_test)
     y_train = np.array(y_train)

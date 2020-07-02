@@ -202,7 +202,7 @@ def compute_cf(classifier, x, protected, solver, integer=False):
 
 
 def process_data(classifier, data, solver, result_name, integer=False, protected=True):
-    """x.reshape(1, -1)
+    """
     :param integer: 'bool'
                     Whether or not the result only contains integer-values.
     :param result_name: 'str'

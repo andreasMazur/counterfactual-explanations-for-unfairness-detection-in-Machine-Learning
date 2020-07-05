@@ -23,9 +23,9 @@ def descent(x_fc, x_sc, w, b, y, index):
     :param index: The index, for the element that shall be rounded.
     :return: The correct leaf from the decision tree.
     """
-    result = rounding(x_fc, w, b, y, index + 1)
+    result = rounding(x_fc, w, b, y, index)
     if result is None:
-        return rounding(x_sc, w, b, y, index + 1)
+        return rounding(x_sc, w, b, y, index)
     else:
         return result
 
@@ -47,21 +47,30 @@ def rounding(x, w, b, y, index):
             return x
         else:
             return None
-    x_copy = x.copy()
-    x[index] = math.floor(x[index])
-    x_copy[index] = math.ceil(x_copy[index])
-    dist1 = w @ x + b
-    dist2 = w @ x_copy + b
-    if y == 0:
-        if dist1 <= dist2:
-            return descent(x, x_copy, w, b, y, index)
-        else:
-            return descent(x_copy, x, w, b, y, index)
+
+    x_1 = x.copy()
+    x_2 = x.copy()
+    x_2[index] = math.floor(x_2[index])
+    x_1[index] = math.ceil(x_1[index])
+    if in_boundaries_2(x_2, [index]) and in_boundaries_2(x_1, [index]):
+        return descent(x_2, x_1, w, b, y, index + 1)
+    elif in_boundaries_2(x_2, [index]):
+        return rounding(x_2, w, b, y, index + 1)
+    elif in_boundaries_2(x_1, [index]):
+        return rounding(x_1, w, b, y, index + 1)
     else:
-        if dist1 >= dist2:
-            return descent(x, x_copy, w, b, y, index)
-        else:
-            return descent(x_copy, x, w, b, y, index)
+        return None
+
+
+def in_boundaries_2(vec, index):
+    in_range = True
+    low_vec = [1, 0, -np.inf, 0, 0, 0, 0, 0, 0]
+    high_vec = [np.inf, np.inf, np.inf, 1, 1, np.inf, 1, 5, 1]
+    for i in index:
+        in_range = in_range and low_vec[i] <= vec[i] <= high_vec[i]
+        if not in_range:
+            break
+    return in_range
 
 
 def rounding_procedure(data, model):
@@ -105,19 +114,6 @@ def store_results(result, result_type, file_name):
     pd.DataFrame(result[result_type]).to_csv(f"{file_name}.csv"
                                              , index=False, sep=";"
                                              , quoting=csv.QUOTE_NONE)
-
-
-def in_boundaries(vec):
-    # TODO: Check if the counterfactual computes the other class
-    return (vec[0] >= 0
-            and vec[1] >= 0
-            and -30 <= vec[2] <= 30
-            and 1 <= vec[3] <= 2
-            and 1 <= vec[4] <= 2
-            and vec[5] >= 0
-            and 1 <= vec[6] <= 2
-            and 0 <= vec[7] <= 5
-            and 1 <= vec[8] <= 2)
 
 
 def compute_cf(classifier, x, protected, solver, integer=False):
@@ -237,12 +233,15 @@ def process_data(classifier, data, solver, result_name, integer=False, protected
         try:
             print(f"{i / len(data) * 100 :.2f}%")
             x, y, x_cf, y_cf = compute_cf(classifier, instance, protected, solver, integer)
+            x_cf_2 = rounding(x_cf, classifier.coef_[0], classifier.intercept_, y, 0)
+            if x_cf_2 is not None:
+                x_cf = x_cf_2
             if y == y_cf:
                 result["no_cf_found"]["x"].append(list(x))
                 result["no_cf_found"]["y"].append(y)
                 result["no_cf_found"]["x_cf"].append(list(x_cf))
                 result["no_cf_found"]["y_cf"].append(y_cf)
-            elif not in_boundaries(x_cf):
+            elif not in_boundaries_2(x_cf, range(9)):
                 result["non_valid_cf"]["x"].append(list(x))
                 result["non_valid_cf"]["y"].append(y)
                 result["non_valid_cf"]["x_cf"].append(list(x_cf))
@@ -292,7 +291,7 @@ def get_data():
 
     # The filtered data
     filtered_data = filter_as_in_literature(recidivsm_data)
-
+    print(filtered_data["c_jail_in"])
     ###### FEATURE TRANSFORMATION #####
     def make_labels(df):
         labels = []
@@ -376,6 +375,7 @@ def main():
     results = []
 
     # compute counterfactuals
+    """
     result = process_data(log_reg, X_test, cp.CBC, "ILP", True)
     # As the numeric solution might be not a whole integer but rather something very
     # close to an integer, we round those values.
@@ -388,24 +388,24 @@ def main():
     result_npa["valid_cf"]["x_cf"] = np.round(result_npa["valid_cf"]["x_cf"]).tolist()
     result_npa["non_valid_cf"]["x_cf"] = np.round(result_npa["non_valid_cf"]["x_cf"]).tolist()
     results.append(result_npa)
-
+    """
     # compute counterfactuals with relaxation
-    result_wr = rounding_procedure(process_data(log_reg, X_test, cp.SCS, "ILP - wr"), log_reg)
+    result_wr = process_data(log_reg, X_test, cp.SCS, "ILP - wr")
     results.append(result_wr)
 
     # compute counterfactuals with relaxation but without protected attributes
-    result_wr_npa = rounding_procedure(process_data(log_reg, X_test, cp.SCS, "ILP - wr - npa", False, False), log_reg)
+    result_wr_npa = process_data(log_reg, X_test, cp.SCS, "ILP - wr - npa", False, False)
     results.append(result_wr_npa)
 
     # export results to csv files for further investigations
-    store_results(result, "valid_cf", "valid_cf")
+    #store_results(result, "valid_cf", "valid_cf")
     store_results(result_wr, "valid_cf", "valid_cf_wr")
-    store_results(result_npa, "valid_cf", "valid_cf_npa")
+    #store_results(result_npa, "valid_cf", "valid_cf_npa")
     store_results(result_wr_npa, "valid_cf", "valid_cf_wr_npa")
 
-    store_results(result, "non_valid_cf", "non_valid_cf")
+    #store_results(result, "non_valid_cf", "non_valid_cf")
     store_results(result_wr, "non_valid_cf", "non_valid_cf_wr")
-    store_results(result_npa, "non_valid_cf", "non_valid_cf_npa")
+    #store_results(result_npa, "non_valid_cf", "non_valid_cf_npa")
     store_results(result_wr_npa, "non_valid_cf", "non_valid_cf_wr_npa")
 
     # report the results

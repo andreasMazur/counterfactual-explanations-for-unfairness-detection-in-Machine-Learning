@@ -8,7 +8,16 @@ import numpy as np
 import cvxpy as cp
 
 CSV_FILE = "compas-scores-two-years.csv"
-VECTOR_DIMENSION = 9
+VECTOR_INDEX = {"age": 0,
+                "priors_count": 1,
+                "days_b_screening_arrest": 2,
+                "is_recid": 3,
+                "two_year_recid": 4,
+                "sex": 5,
+                "race": 6,
+                "charge_degree": 7,
+                "time_in_jail": 8}
+VECTOR_DIMENSION = len(VECTOR_INDEX)
 LOWER_BOUNDS = [1, 0, -np.inf, 0, 0, 0, 0, 0, 0]
 UPPER_BOUNDS = [np.inf, np.inf, np.inf, 1, 1, np.inf, 1, 5, 1]
 
@@ -45,7 +54,6 @@ def manhatten_dist(x, x_cf):
 
 
 def compute_cf(meta_data, vector):
-
     # predicts the opposite of the current prediction
     y = meta_data.classifier.predict(vector.reshape(1, -1))
     y_target = 1 - y
@@ -69,14 +77,14 @@ def compute_cf(meta_data, vector):
     # protected constraints
     if meta_data.protected_attributes:
         coefficients = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
-        coefficients[0, 0] = 1  # age
-        coefficients[6, 6] = 1  # sex
-        coefficients[7, 7] = 1  # race
+        coefficients[VECTOR_INDEX["age"], VECTOR_INDEX["age"]] = 1
+        coefficients[VECTOR_INDEX["sex"], VECTOR_INDEX["sex"]] = 1
+        coefficients[VECTOR_INDEX["race"], VECTOR_INDEX["race"]] = 1
 
         x_constants = np.zeros(VECTOR_DIMENSION)
-        x_constants[0] = vector[0]
-        x_constants[6] = vector[6]
-        x_constants[7] = vector[7]
+        x_constants[VECTOR_INDEX["age"]] = vector[VECTOR_INDEX["age"]]
+        x_constants[VECTOR_INDEX["sex"]] = vector[VECTOR_INDEX["sex"]]
+        x_constants[VECTOR_INDEX["race"]] = vector[VECTOR_INDEX["race"]]
 
         constraints += [coefficients @ x_cf == x_constants]
 

@@ -6,6 +6,7 @@ from sklearn.linear_model import LogisticRegression
 import csv
 import numpy as np
 import cvxpy as cp
+import math
 
 CSV_FILE = "compas-scores-two-years.csv"
 VECTOR_INDEX = {"age": 0,
@@ -18,13 +19,19 @@ VECTOR_INDEX = {"age": 0,
                 "charge_degree": 7,
                 "time_in_jail": 8}
 VECTOR_DIMENSION = len(VECTOR_INDEX)
-LOWER_BOUNDS = [1, 0, -np.inf, 0, 0, 0, 0, 0, 0]
-UPPER_BOUNDS = [np.inf, np.inf, np.inf, 1, 1, np.inf, 1, 5, 1]
+LOWER_BOUNDS = [0, 0, -np.inf, 0, 0, 0, 0, 0, 0]
+UPPER_BOUNDS = [np.inf, np.inf, np.inf, 1, 1, 1, 1, 5, np.inf]
+
+
+def store_results(result, result_type, file_name):
+    pd.DataFrame(result[result_type]).to_csv(f"{file_name}.csv"
+                                             , index=False, sep=";"
+                                             , quoting=csv.QUOTE_NONE)
 
 
 class MetaData:
     """
-    Meta-data object, that contains data necessary at
+    Meta-data object, that contains information that is necessary at
     multiple points in the computing process.
     """
 
@@ -46,6 +53,56 @@ class MetaData:
         self.classifier = classifier
 
 
+def descent(x_fc, x_sc, w, b, y, index):
+    """
+    A function to choose the right sub-tree in the decision tree.
+
+    :param x_fc: The 'first choice' vector. A vector with better fitting costs.
+    :param x_sc: The 'second choice' vector.  A vector with better less fitting costs.
+    :param w: The weight-vector of our logistic regression
+    :param b: The bias of our logistic regression
+    :param y: The label for 'x'
+    :param index: The index, for the element that shall be rounded.
+    :return: The correct leaf from the decision tree.
+    """
+    result = rounding(x_fc, w, b, y, index)
+    if result is None:
+        return rounding(x_sc, w, b, y, index)
+    else:
+        return result
+
+
+def rounding(x, w, b, y, index):
+    """
+    A function to produce a decision-tree in order to get a correctly
+    rounded integer vector with respect to its class.
+
+    :param x: The counterfactual that shall be rounded
+    :param w: The weight-vector of our logistic regression
+    :param b: The bias of our logistic regression
+    :param y: The label for 'x'
+    :param index: The index, for the element that shall be rounded.
+    :return: A counterfactual with only integer entries.
+    """
+    if index == len(x):
+        if int(w @ x + b > 0) == y:
+            return x
+        else:
+            return None
+
+    x_copy = x.copy()
+    x[index] = math.floor(x[index])
+    x_copy[index] = math.ceil(x_copy[index])
+    if in_boundaries(x, [index]) and in_boundaries(x_copy, [index]):
+        return descent(x, x_copy, w, b, y, index + 1)
+    elif in_boundaries(x, [index]):
+        return rounding(x, w, b, y, index + 1)
+    elif in_boundaries(x_copy, [index]):
+        return rounding(x_copy, w, b, y, index + 1)
+    else:
+        return None
+
+
 def manhatten_dist(x, x_cf):
     sum = 0
     for j in range(x.shape[0]):
@@ -58,12 +115,12 @@ def compute_cf(meta_data, vector):
     y = meta_data.classifier.predict(vector.reshape(1, -1))
     y_target = 1 - y
 
-    # w.l.o.g. y \in {-1,1}
+    # The formulation of constraint for minimizing the optimization problem
+    # of hyperplane models assumed y to be in {-1, 1}
     if y_target == 0:
         y_target = -1
 
-    x_cf = cp.Variable(vector.shape[0], integer=meta_data.relaxation)
-
+    x_cf = cp.Variable(vector.shape[0], integer=not meta_data.relaxation)
     objective = cp.Minimize(manhatten_dist(vector, x_cf))
 
     # Forming constraints like in 3.2
@@ -92,9 +149,8 @@ def compute_cf(meta_data, vector):
     lower_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
     for i in [VECTOR_INDEX["age"], VECTOR_INDEX["priors_count"]
         , VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
-        , VECTOR_INDEX["two_year_recid"], VECTOR_INDEX["sex"]
-        , VECTOR_INDEX["race"], VECTOR_INDEX["charge_degree"]
-        , VECTOR_INDEX["time_in_jail"]]:
+        , VECTOR_INDEX["sex"], VECTOR_INDEX["race"]
+        , VECTOR_INDEX["charge_degree"], VECTOR_INDEX["time_in_jail"]]:
         lower_bounds[i, i] = 1
 
     constraints += [-(lower_bounds @ x_cf) <= 0]
@@ -144,33 +200,46 @@ def process_data(meta_data):
         "used_solver": meta_data.solver,
         "valid_cf": {"x": [], "y": [], "x_cf": [], "y_cf": []},
         "non_valid_cf": {"x": [], "y": [], "x_cf": [], "y_cf": []},
-        "no_cf_found": {"x": [], "y": [], "x_cf": [], "y_cf": []},
+        "no_cf_found": {"x": [], "y": []},
         "not_solvable": 0  # Amount of vectors for which no cf have been found
     }
 
     # Initialize counterfactual-computation for each vector in the given data set
     data = meta_data.data.to_numpy()
-    for vector in data:
+    for i, vector in enumerate(data):
+        print(f"{i / len(data) * 100 :.2f}%")
+        vector_label = meta_data.classifier.predict(vector.reshape(1, -1))[0]
         try:
             x_cf, y_cf = compute_cf(meta_data, vector)
-            x_cf = rounding(x_cf)
-            if y == y_cf:
-                result["no_cf_found"]["x"].append(list(x))
-                result["no_cf_found"]["y"].append(y)
-                result["no_cf_found"]["x_cf"].append(list(x_cf))
-                result["no_cf_found"]["y_cf"].append(y_cf)
+            if meta_data.relaxation:
+                x_cf = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
+                                  , y_cf, 0)
+            else:
+                # Values need to be integers and sometimes even though we use
+                # CBC (in this case) we have .9999... values. If we do not round here,
+                # we probably will have non-zero entries in rows where we actually should have
+                # zero-entries, when we count the changes. See 'detect_amount_of_changes' in
+                # 'visualization.py' for further information.
+                x_cf = np.round(x_cf)
+            if vector_label == y_cf or x_cf is None:
+                result["no_cf_found"]["x"].append(list(vector))
+                result["no_cf_found"]["y"].append(vector_label)
+                result["non_valid_cf"]["x_cf"].append(list(x_cf))
+                result["non_valid_cf"]["y_cf"].append(y_cf)
             elif not in_boundaries(x_cf, range(VECTOR_DIMENSION)):
-                result["non_valid_cf"]["x"].append(list(x))
-                result["non_valid_cf"]["y"].append(y)
+                result["non_valid_cf"]["x"].append(list(vector))
+                result["non_valid_cf"]["y"].append(vector_label)
                 result["non_valid_cf"]["x_cf"].append(list(x_cf))
                 result["non_valid_cf"]["y_cf"].append(y_cf)
             else:
-                result["valid_cf"]["x"].append(list(x))
-                result["valid_cf"]["y"].append(y)
+                result["valid_cf"]["x"].append(list(vector))
+                result["valid_cf"]["y"].append(vector_label)
                 result["valid_cf"]["x_cf"].append(list(x_cf))
                 result["valid_cf"]["y_cf"].append(y_cf)
         except ValueError:
             result["not_solvable"] += 1
+
+    return result
 
 
 def get_data():
@@ -257,9 +326,51 @@ def main():
 
     # List for collecting the results
     results = []
-
+    """
     ##### COMPUTING COUNTERFACTUALS #####
-    result = process_data()
+    # 1. set of counterfactuals: ILP + protected attributes
+    meta_data = MetaData(recidivism_data, cp.CBC, True, "ILP - pa", False, log_reg)
+    ILP = process_data(meta_data)
+    results.append(ILP)
+    store_results(ILP, "valid_cf", "valid_cf")
+
+    # 2. set of counterfactuals: ILP + not protecting attributes
+    meta_data = MetaData(recidivism_data, cp.CBC, False, "ILP - npa", False, log_reg)
+    ILP_npa = process_data(meta_data)
+    results.append(ILP_npa)
+    store_results(ILP_npa, "valid_cf", "valid_cf")
+    """
+    # 3. set of counterfactuals: ILP + relaxation + protected attributes
+    meta_data = MetaData(recidivism_data, cp.SCS, True, "ILP - wr - pa", True, log_reg)
+    ILP_wr = process_data(meta_data)
+    results.append(ILP_wr)
+    store_results(ILP_wr, "valid_cf", "valid_cf_wr")
+    store_results(ILP_wr, "non_valid_cf", "non_valid_cf_wr")
+
+    # 4. set of counterfactuals: ILP + relaxation + not protecting attributes
+    meta_data = MetaData(recidivism_data, cp.SCS, False, "ILP - wr - npa", True, log_reg)
+    ILP_wr_npa = process_data(meta_data)
+    results.append(ILP_wr_npa)
+    store_results(ILP_wr_npa, "valid_cf", "valid_cf_wr_npa")
+    store_results(ILP_wr_npa, "non_valid_cf", "non_valid_cf_wr_npa")
+
+    # report the results
+    print("\n")
+    print("Computation finished.")
+    for res in results:
+        print("\n")
+        print("Experiment:", res["result_name"])
+        print("Used solver:", res["used_solver"])
+        print("Amount of valid counterfactuals", len(res["valid_cf"]["x_cf"]))
+        print("Amount of counterfactuals, that exceed the boundaries:", len(res["non_valid_cf"]["x_cf"]))
+        print("Amount of instances, for which no counterfactual have been found:", len(res["no_cf_found"]["x"]))
+        print("Amount of not optimal or infeasible problems:", res["not_solvable"])
+
+    print("\n")
+    print("Accuracy score of the logistic regression:", log_reg.score(X_test, y_test))
+    print("Parameter-values of the logistic regression:")
+    print(f"w = {log_reg.coef_[0]}")
+    print(f"b = {log_reg.intercept_}")
 
 
 if __name__ == "__main__":

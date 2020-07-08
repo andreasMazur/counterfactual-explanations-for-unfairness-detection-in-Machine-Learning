@@ -5,10 +5,10 @@ import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 from scipy.stats import chi2_contingency
+from compute_cfs_new import VECTOR_INDEX
 
 # The names in correct order for the columns of a dataset
-categories = ["age", "priors_count", "days_b_screening_arrest", "is_recid"
-    , "two_year_recid", "time_in_jail", "sex", "race", "charge_degree"]
+categories = list(VECTOR_INDEX.keys())
 
 
 def detect_amount_of_changes(xs, x_cfs):
@@ -23,7 +23,7 @@ def detect_amount_of_changes(xs, x_cfs):
     :return: y_values: 'pandas.core.frame.DataFrame'
              The amount of changes per attribute and race.
     """
-    # Generate sub-datasets for each race
+    # Generate sub-datasets for each race (for coloring the histogram)
     sub_datasets_xs = []
     sub_datasets_x_cfs = []
     try:
@@ -78,14 +78,14 @@ def plot_heatmap_for_cramers_v(data, heatmap_name):
              A dataframe with the Cramer's V-values for each
              attribute-pair.
     """
-    chi_2_values = cramers_v(data)
+    cramers_v_values = cramers_v(data)
     fig, ax = plt.subplots(figsize=(10, 5))
-    sns.heatmap(chi_2_values, annot=True, cmap=plt.cm.Reds, ax=ax)
+    sns.heatmap(cramers_v_values, annot=True, cmap=plt.cm.Reds, ax=ax)
     plt.title("Cramer's V - values")
     plt.tight_layout()
     plt.savefig(heatmap_name)
     plt.show()
-    return chi_2_values
+    return cramers_v_values
 
 
 def cramers_v(data):
@@ -108,9 +108,9 @@ def cramers_v(data):
     for i, fst_column in enumerate(data):
         for j, snd_column in enumerate(data):
 
-            # We just need the upper triangular of the cross-product matrix
-            # without the diagonal because chi-2 is symmetric.
+            # We just need the upper triangular of the cross-product matrix because chi-2 is symmetric.
             if i <= j:
+                print("Currently computing Cramer's V for:", fst_column, snd_column)
 
                 # Compute all possible value-pairs (cross product)
                 rows_indices = list(data.groupby(fst_column).count().index)
@@ -118,8 +118,7 @@ def cramers_v(data):
                 cross_product = [(x, y) for x in rows_indices for y in column_indices]
                 cross_product = np.array(cross_product).reshape(len(rows_indices), len(column_indices), 2)
 
-                # Count how much each value-pair has occurred and put it
-                # into the contingency table.
+                # Count how often each value-pair has occurred and put it into the contingency table.
                 contingency_table = []
                 for row in cross_product:
                     contingency_table_row = []
@@ -143,7 +142,6 @@ def cramers_v(data):
                     cramers_v_table.at[fst_column, snd_column] = cramers_v_value
                     cramers_v_table.at[snd_column, fst_column] = cramers_v_value
 
-                # To compute a
                 except ZeroDivisionError:
                     print("Contingency table for", fst_column, "and"
                           , snd_column, "contains structural zeros.")
@@ -184,20 +182,27 @@ def read_data(file_name, skip_cf=False):
 
 def main():
     # Retrieve data
-    x_values = read_data("x_values.csv", True)
+    # x_values = read_data("x_values.csv", True)
+
+    # ILP
     valid_cfs = read_data("valid_cf.csv")
     valid_cfs_npa = read_data("valid_cf_npa.csv")
-    non_valid_cfs_wr = read_data("non_valid_cf_wr.csv")
-    non_valid_cf_wr_npa = read_data("non_valid_cf_wr_npa.csv")
+
+    # ILP with relaxation
+    valid_cfs_wr = read_data("valid_cf_wr.csv")
+    valid_cfs_wr_npa = read_data("valid_cf_wr_npa.csv")
 
     # Compute Cramer's V
-    plot_heatmap_for_cramers_v(x_values["x"], "heatmap.png")
+    # plot_heatmap_for_cramers_v(x_values["x"], "heatmap.png")
 
     # Detect the amount of suggested changes per attribute
+    # ILP
     detect_amount_of_changes(valid_cfs["x"], valid_cfs["x_cf"])
     detect_amount_of_changes(valid_cfs_npa["x"], valid_cfs_npa["x_cf"])
-    detect_amount_of_changes(non_valid_cfs_wr["x"], non_valid_cfs_wr["x_cf"])
-    detect_amount_of_changes(non_valid_cf_wr_npa["x"], non_valid_cf_wr_npa["x_cf"])
+
+    # ILP with relaxation
+    detect_amount_of_changes(valid_cfs_wr["x"], valid_cfs_wr["x_cf"])
+    detect_amount_of_changes(valid_cfs_wr_npa["x"], valid_cfs_wr_npa["x_cf"])
 
 if __name__ == "__main__":
     main()

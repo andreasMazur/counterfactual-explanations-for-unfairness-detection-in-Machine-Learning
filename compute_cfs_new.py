@@ -88,28 +88,31 @@ def compute_cf(meta_data, vector):
 
         constraints += [coefficients @ x_cf == x_constants]
 
-    # TODO: EVERYTHING FROM HERE
     # lower bounds
     lower_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
-    for i in [1, 2, 3, 4, 5, 8]:
+    for i in [VECTOR_INDEX["age"], VECTOR_INDEX["priors_count"]
+        , VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
+        , VECTOR_INDEX["two_year_recid"], VECTOR_INDEX["sex"]
+        , VECTOR_INDEX["race"], VECTOR_INDEX["charge_degree"]
+        , VECTOR_INDEX["time_in_jail"]]:
         lower_bounds[i, i] = 1
 
-    lb_vector = np.zeros(VECTOR_DIMENSION)
-    for i in [3, 4, 8]:
-        lb_vector[i] = 1
-
-    constraints += [-(lower_bounds @ (x_cf - lb_vector)) <= 0]
+    constraints += [-(lower_bounds @ x_cf) <= 0]
 
     # upper bounds
     upper_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
-    for i in [3, 4, 8]:
+    for i in [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
+        , VECTOR_INDEX["sex"], VECTOR_INDEX["race"]
+        , VECTOR_INDEX["charge_degree"]]:
         upper_bounds[i, i] = 1
 
     ub_vector = np.zeros(VECTOR_DIMENSION)
-    for i in [3, 4, 8]:
-        ub_vector[i] = 2
+    for i in [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
+        , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]]:
+        ub_vector[i] = 1
 
-    constraints += [-(upper_bounds @ (ub_vector - x_cf)) <= 0]
+    ub_vector[VECTOR_INDEX["race"]] = 5
+    constraints += [upper_bounds @ (x_cf - ub_vector) <= 0]
 
     # Solve the problem
     prob = cp.Problem(objective, constraints)

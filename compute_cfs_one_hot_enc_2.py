@@ -142,7 +142,7 @@ def compute_cf(meta_data, vector):
     q = -y_target * weight_vector
     c = -meta_data.classifier.intercept_ * y_target
 
-    # cvxpy doesn't allow strict inequalities
+    # strict inequalities are not allowed
     constraints = [q.T @ x_cf + c <= 0]
 
     # Adding constraint for race-attribute
@@ -394,7 +394,7 @@ def main():
     ILP_wr_npa = process_data(meta_data)
     results.append(ILP_wr_npa)
     store_results(ILP_wr_npa, "valid_cf", "valid_cf_wr_npa")
-    
+
     # report the results
     print("\n")
     print("Computation finished.")

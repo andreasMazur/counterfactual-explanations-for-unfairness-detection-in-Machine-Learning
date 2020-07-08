@@ -200,6 +200,7 @@ def main():
     detect_amount_of_changes(valid_cfs["x"], valid_cfs["x_cf"])
     detect_amount_of_changes(valid_cfs_npa["x"], valid_cfs_npa["x_cf"])
 
+
     # ILP with relaxation
     detect_amount_of_changes(valid_cfs_wr["x"], valid_cfs_wr["x_cf"])
     detect_amount_of_changes(valid_cfs_wr_npa["x"], valid_cfs_wr_npa["x_cf"])

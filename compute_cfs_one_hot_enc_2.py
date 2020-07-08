@@ -15,12 +15,18 @@ VECTOR_INDEX = {"age": 0,
                 "is_recid": 3,
                 "two_year_recid": 4,
                 "sex": 5,
-                "race": 6,
-                "charge_degree": 7,
-                "time_in_jail": 8}
+                "charge_degree": 6,
+                "time_in_jail": 7,
+                "race_African-American": 8,
+                "race_Asian": 9,
+                "race_Caucasian": 10,
+                "race_Hispanic": 11,
+                "race_Native American": 12,
+                "race_Other": 13}
 VECTOR_DIMENSION = len(VECTOR_INDEX)
-LOWER_BOUNDS = [0, 0, -np.inf, 0, 0, 0, 0, 0, 0]
-UPPER_BOUNDS = [np.inf, np.inf, np.inf, 1, 1, 1, 5, 1, np.inf]
+ONE_HOT_VECTOR_START_INDEX = VECTOR_INDEX["race_African-American"]
+LOWER_BOUNDS = [0, 0, -np.inf, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+UPPER_BOUNDS = [np.inf, np.inf, np.inf, 1, 1, 1, 1, np.inf, 1, 1, 1, 1, 1, 1]
 
 
 class MetaData:
@@ -84,12 +90,20 @@ def rounding(x, w, b, y, index):
     :param index: The index, for the element that shall be rounded.
     :return: A counterfactual with only integer entries.
     """
+    # Base case
     if index == len(x):
         if int(w @ x + b > 0) == y:
             return x
         else:
             return None
 
+    # Round one-hot-encoding
+    if index >= ONE_HOT_VECTOR_START_INDEX and x[index-1] == 1:
+        for i in range(index, len(x)):
+            x[i] = 0
+        return rounding(x, w, b, y, len(x))
+
+    # Recursion step
     x_copy = x.copy()
     x[index] = math.floor(x[index])
     x_copy[index] = math.ceil(x_copy[index])
@@ -131,17 +145,34 @@ def compute_cf(meta_data, vector):
     # cvxpy doesn't allow strict inequalities
     constraints = [q.T @ x_cf + c <= 0]
 
+    # Adding constraint for race-attribute
+    ones = np.zeros(VECTOR_DIMENSION)
+    for i in [VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
+        , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Other"]]:
+        ones[i] = 1
+    constraints += [ones.T @ x_cf == 1]
+
     # protected constraints
     if meta_data.protected_attributes:
         coefficients = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
         coefficients[VECTOR_INDEX["age"], VECTOR_INDEX["age"]] = 1
         coefficients[VECTOR_INDEX["sex"], VECTOR_INDEX["sex"]] = 1
-        coefficients[VECTOR_INDEX["race"], VECTOR_INDEX["race"]] = 1
+        coefficients[VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_African-American"]] = 1
+        coefficients[VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Asian"]] = 1
+        coefficients[VECTOR_INDEX["race_Caucasian"], VECTOR_INDEX["race_Caucasian"]] = 1
+        coefficients[VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Hispanic"]] = 1
+        coefficients[VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Native American"]] = 1
+        coefficients[VECTOR_INDEX["race_Other"], VECTOR_INDEX["race_Other"]] = 1
 
         x_constants = np.zeros(VECTOR_DIMENSION)
         x_constants[VECTOR_INDEX["age"]] = vector[VECTOR_INDEX["age"]]
         x_constants[VECTOR_INDEX["sex"]] = vector[VECTOR_INDEX["sex"]]
-        x_constants[VECTOR_INDEX["race"]] = vector[VECTOR_INDEX["race"]]
+        x_constants[VECTOR_INDEX["race_African-American"]] = vector[VECTOR_INDEX["race_African-American"]]
+        x_constants[VECTOR_INDEX["race_Asian"]] = vector[VECTOR_INDEX["race_Asian"]]
+        x_constants[VECTOR_INDEX["race_Caucasian"]] = vector[VECTOR_INDEX["race_Caucasian"]]
+        x_constants[VECTOR_INDEX["race_Hispanic"]] = vector[VECTOR_INDEX["race_Hispanic"]]
+        x_constants[VECTOR_INDEX["race_Native American"]] = vector[VECTOR_INDEX["race_Native American"]]
+        x_constants[VECTOR_INDEX["race_Other"]] = vector[VECTOR_INDEX["race_Other"]]
 
         constraints += [coefficients @ x_cf == x_constants]
 
@@ -149,8 +180,11 @@ def compute_cf(meta_data, vector):
     lower_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
     for i in [VECTOR_INDEX["age"], VECTOR_INDEX["priors_count"]
         , VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
-        , VECTOR_INDEX["sex"], VECTOR_INDEX["race"]
-        , VECTOR_INDEX["charge_degree"], VECTOR_INDEX["time_in_jail"]]:
+        , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
+        , VECTOR_INDEX["time_in_jail"], VECTOR_INDEX["race_African-American"]
+        , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
+        , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
+        , VECTOR_INDEX["race_Other"]]:
         lower_bounds[i, i] = 1
 
     constraints += [-(lower_bounds @ x_cf) <= 0]
@@ -158,17 +192,22 @@ def compute_cf(meta_data, vector):
     # upper bounds
     upper_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
     for i in [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
-        , VECTOR_INDEX["sex"], VECTOR_INDEX["race"]
-        , VECTOR_INDEX["charge_degree"]]:
+        , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
+        , VECTOR_INDEX["race_African-American"]
+        , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
+        , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
+        , VECTOR_INDEX["race_Other"]]:
         upper_bounds[i, i] = 1
 
     ub_vector = np.zeros(VECTOR_DIMENSION)
     for i in [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
-        , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]]:
+        , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
+        , VECTOR_INDEX["race_African-American"]
+        , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
+        , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
+        , VECTOR_INDEX["race_Other"]]:
         ub_vector[i] = 1
 
-    ub_vector[VECTOR_INDEX["race"]] = 5
-    constraints += [upper_bounds @ (x_cf - ub_vector) <= 0]
 
     # Solve the problem
     prob = cp.Problem(objective, constraints)
@@ -213,7 +252,7 @@ def process_data(meta_data):
             x_cf, y_cf = compute_cf(meta_data, vector)
             if meta_data.relaxation:
                 x_cf_2 = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
-                                , y_cf, 0)
+                                  , y_cf, 0)
                 if not (x_cf_2 is None):
                     x_cf = x_cf_2
                     y_cf = meta_data.classifier.predict(np.array(x_cf).reshape(1, -1))
@@ -289,8 +328,6 @@ def get_data():
     label_encoder = preprocessing.LabelEncoder()
     label_encoder.fit(recidivism_data_filtered["c_charge_degree"])
     recidivism_data_filtered["c_charge_degree"] = label_encoder.transform(recidivism_data_filtered["c_charge_degree"])
-    label_encoder.fit(recidivism_data_filtered["race"])
-    recidivism_data_filtered["race"] = label_encoder.transform(recidivism_data_filtered["race"])
     label_encoder.fit(recidivism_data_filtered["sex"])
     recidivism_data_filtered["sex"] = label_encoder.transform(recidivism_data_filtered["sex"])
 
@@ -300,12 +337,15 @@ def get_data():
         , "days_b_screening_arrest"
         , "is_recid"
         , "two_year_recid"
-        , "sex"
         , "race"
+        , "sex"
         , "c_charge_degree"])
     recidivism_data["time_in_jail"] = jail_time
     recidivism_data.index = range(len(recidivism_data))
     recidivism_data.rename({"c_charge_degree": "charge_degree"}, axis=1, inplace=True)
+
+    # One-hot encoding for the attribute 'race'
+    recidivism_data = pd.get_dummies(recidivism_data)
 
     return recidivism_data, label
 
@@ -329,7 +369,7 @@ def main():
 
     # List for collecting the results
     results = []
-    """
+    
     ##### COMPUTING COUNTERFACTUALS #####
     # 1. set of counterfactuals: ILP + protected attributes
     meta_data = MetaData(recidivism_data, cp.CBC, True, "ILP - pa", False, log_reg)
@@ -341,24 +381,20 @@ def main():
     meta_data = MetaData(recidivism_data, cp.CBC, False, "ILP - npa", False, log_reg)
     ILP_npa = process_data(meta_data)
     results.append(ILP_npa)
-    store_results(ILP_npa, "valid_cf", "valid_cf")
-    """
+    store_results(ILP_npa, "valid_cf", "valid_cf_npa")
+    
     # 3. set of counterfactuals: ILP + relaxation + protected attributes
     meta_data = MetaData(recidivism_data, cp.SCS, True, "ILP - wr - pa", True, log_reg)
     ILP_wr = process_data(meta_data)
     results.append(ILP_wr)
     store_results(ILP_wr, "valid_cf", "valid_cf_wr")
-    store_results(ILP_wr, "non_valid_cf", "non_valid_cf_wr")
-    store_results(ILP_wr, "no_cf_found", "no_cf_found_wr")
 
     # 4. set of counterfactuals: ILP + relaxation + not protecting attributes
     meta_data = MetaData(recidivism_data, cp.SCS, False, "ILP - wr - npa", True, log_reg)
     ILP_wr_npa = process_data(meta_data)
     results.append(ILP_wr_npa)
     store_results(ILP_wr_npa, "valid_cf", "valid_cf_wr_npa")
-    store_results(ILP_wr_npa, "non_valid_cf", "non_valid_cf_wr_npa")
-    store_results(ILP_wr, "no_cf_found", "no_cf_found_wr_npa")
-
+    
     # report the results
     print("\n")
     print("Computation finished.")

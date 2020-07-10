@@ -7,6 +7,7 @@ import csv
 import numpy as np
 import cvxpy as cp
 import math
+import sys
 
 CSV_FILE = "compas-scores-two-years.csv"
 VECTOR_INDEX = {"age": 0,
@@ -92,13 +93,13 @@ def rounding(x, w, b, y, index):
     """
     # Base case
     if index == len(x):
-        if int(w @ x + b > 0) == y:
+        if int(w @ x + b > 0) == y and one_hot_valid(x):
             return x
         else:
             return None
 
     # Round one-hot-encoding
-    if index >= ONE_HOT_VECTOR_START_INDEX and x[index-1] == 1:
+    if index >= ONE_HOT_VECTOR_START_INDEX + 1 and x[index - 1] == 1:
         for i in range(index, len(x)):
             x[i] = 0
         return rounding(x, w, b, y, len(x))
@@ -153,6 +154,7 @@ def compute_cf(meta_data, vector):
     constraints += [ones.T @ x_cf == 1]
 
     # protected constraints
+    # TODO: Write with for-loop
     if meta_data.protected_attributes:
         coefficients = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
         coefficients[VECTOR_INDEX["age"], VECTOR_INDEX["age"]] = 1
@@ -207,7 +209,7 @@ def compute_cf(meta_data, vector):
         , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
         , VECTOR_INDEX["race_Other"]]:
         ub_vector[i] = 1
-
+    constraints += [upper_bounds @ (x_cf - ub_vector) <= 0]
 
     # Solve the problem
     prob = cp.Problem(objective, constraints)
@@ -218,6 +220,22 @@ def compute_cf(meta_data, vector):
     return x_cf.value, meta_data.classifier.predict(x_cf.value.reshape(1, -1))[0]
 
 
+def one_hot_valid(vec):
+    seen_one = False
+    for i in range(ONE_HOT_VECTOR_START_INDEX, VECTOR_DIMENSION):
+        # Set the 'seen a one'-flag, since there only can be one one.
+        if vec[i] == 1:
+            seen_one = True
+        # If there's a second one, return false.
+        elif seen_one and (vec[i] == 1):
+            return False
+        # If the value is neither 1 nor 0, return false.
+        elif vec[i] != 1 and vec[i] != 0:
+            return False
+    # Return true, if no violation happened.
+    return seen_one
+
+
 def in_boundaries(vec, index):
     in_range = True
     for i in index:
@@ -225,6 +243,10 @@ def in_boundaries(vec, index):
         if not in_range:
             break
     return in_range
+
+
+def is_valid(vec, y, y_cf):
+    return in_boundaries(vec, range(VECTOR_DIMENSION)) and one_hot_valid(vec) and y != y_cf
 
 
 def process_data(meta_data):
@@ -237,50 +259,52 @@ def process_data(meta_data):
     result = {
         "result_name": meta_data.result_name,
         "used_solver": meta_data.solver,
+        # Valid Counterfactuals
         "valid_cf": {"x": [], "y": [], "x_cf": [], "y_cf": []},
+        # Counterfactuals, that do not pass the filter
         "non_valid_cf": {"x": [], "y": [], "x_cf": [], "y_cf": []},
-        "no_cf_found": {"x": [], "y": [], "x_cf": [], "y_cf": []},
-        "not_solvable": 0  # Amount of vectors for which no cf have been found
+        "exceeding_bounds": {"x": [], "y": [], "x_cf": [], "y_cf": []}
     }
 
     # Initialize counterfactual-computation for each vector in the given data set
     data = meta_data.data.to_numpy()
     for i, vector in enumerate(data):
-        print(f"{i / len(data) * 100 :.2f}%")
         vector_label = meta_data.classifier.predict(vector.reshape(1, -1))[0]
-        try:
-            x_cf, y_cf = compute_cf(meta_data, vector)
-            if meta_data.relaxation:
-                x_cf_2 = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
-                                  , y_cf, 0)
-                if not (x_cf_2 is None):
-                    x_cf = x_cf_2
-                    y_cf = meta_data.classifier.predict(np.array(x_cf).reshape(1, -1))
-            else:
-                # Values need to be integers and sometimes even though we use
-                # CBC (in this case) we have .9999... values. If we do not round here,
-                # we probably will have non-zero entries in rows where we actually should have
-                # zero-entries, when we count the changes. See 'detect_amount_of_changes' in
-                # 'visualization.py' for further information.
-                x_cf = np.round(x_cf)
-            if vector_label == y_cf:
-                result["no_cf_found"]["x"].append(list(vector))
-                result["no_cf_found"]["y"].append(vector_label)
-                result["no_cf_found"]["x_cf"].append(list(x_cf))
-                result["no_cf_found"]["y_cf"].append(y_cf)
-            elif not in_boundaries(x_cf, range(VECTOR_DIMENSION)):
-                result["non_valid_cf"]["x"].append(list(vector))
-                result["non_valid_cf"]["y"].append(vector_label)
-                result["non_valid_cf"]["x_cf"].append(list(x_cf))
-                result["non_valid_cf"]["y_cf"].append(y_cf)
-            else:
-                result["valid_cf"]["x"].append(list(vector))
-                result["valid_cf"]["y"].append(vector_label)
-                result["valid_cf"]["x_cf"].append(list(x_cf))
-                result["valid_cf"]["y_cf"].append(y_cf)
-        except ValueError:
-            result["not_solvable"] += 1
-
+        x_cf, y_cf = compute_cf(meta_data, vector)
+        not_rounded = False
+        if meta_data.relaxation:
+            try:
+                x_cf = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
+                                , 1 - vector_label, 0)
+                # Just to be sure, but actually 'y_cf = 1 - vector_label' could stay here.
+                y_cf = meta_data.classifier.predict(x_cf.reshape(1, -1))[0]
+            except AttributeError:
+                x_cf, y_cf = compute_cf(meta_data, vector)
+                not_rounded = True
+        else:
+            # Values need to be integers and sometimes even though we use
+            # CBC (in this case) we have .9999... values. If we do not round here,
+            # we probably will have non-zero entries in rows where we actually should have
+            # zero-entries, when we count the changes. See 'detect_amount_of_changes' in
+            # 'visualization.py' for further information.
+            x_cf = np.round(x_cf)
+        if not_rounded:
+            result["non_valid_cf"]["x"].append(list(vector))
+            result["non_valid_cf"]["y"].append(vector_label)
+            result["non_valid_cf"]["x_cf"].append(list(x_cf))
+            result["non_valid_cf"]["y_cf"].append(y_cf)
+        elif not is_valid(x_cf, vector_label, y_cf):
+            result["exceeding_bounds"]["x"].append(list(vector))
+            result["exceeding_bounds"]["y"].append(vector_label)
+            result["exceeding_bounds"]["x_cf"].append(list(x_cf))
+            result["exceeding_bounds"]["y_cf"].append(y_cf)
+        else:
+            result["valid_cf"]["x"].append(list(vector))
+            result["valid_cf"]["y"].append(vector_label)
+            result["valid_cf"]["x_cf"].append(list(x_cf))
+            result["valid_cf"]["y_cf"].append(y_cf)
+        sys.stdout.write(f"\rThe process is {i / len(data) * 100 :.2f}% complete.")
+        sys.stdout.flush()
     return result
 
 
@@ -369,31 +393,37 @@ def main():
 
     # List for collecting the results
     results = []
-    
+
     ##### COMPUTING COUNTERFACTUALS #####
     # 1. set of counterfactuals: ILP + protected attributes
     meta_data = MetaData(recidivism_data, cp.CBC, True, "ILP - pa", False, log_reg)
     ILP = process_data(meta_data)
     results.append(ILP)
     store_results(ILP, "valid_cf", "valid_cf")
+    store_results(ILP, "non_valid_cf", "non_valid_cf")
 
     # 2. set of counterfactuals: ILP + not protecting attributes
     meta_data = MetaData(recidivism_data, cp.CBC, False, "ILP - npa", False, log_reg)
     ILP_npa = process_data(meta_data)
     results.append(ILP_npa)
     store_results(ILP_npa, "valid_cf", "valid_cf_npa")
+    store_results(ILP_npa, "non_valid_cf", "non_valid_cf_npa")
     
     # 3. set of counterfactuals: ILP + relaxation + protected attributes
     meta_data = MetaData(recidivism_data, cp.SCS, True, "ILP - wr - pa", True, log_reg)
     ILP_wr = process_data(meta_data)
     results.append(ILP_wr)
     store_results(ILP_wr, "valid_cf", "valid_cf_wr")
+    store_results(ILP_wr, "non_valid_cf", "non_valid_cf_wr")
+    store_results(ILP_wr, "exceeding_bounds", "exceeding_bounds_wr")
 
     # 4. set of counterfactuals: ILP + relaxation + not protecting attributes
     meta_data = MetaData(recidivism_data, cp.SCS, False, "ILP - wr - npa", True, log_reg)
     ILP_wr_npa = process_data(meta_data)
     results.append(ILP_wr_npa)
     store_results(ILP_wr_npa, "valid_cf", "valid_cf_wr_npa")
+    store_results(ILP_wr_npa, "non_valid_cf", "non_valid_cf_wr_npa")
+    store_results(ILP_wr_npa, "exceeding_bounds", "exceeding_bounds_wr_npa")
 
     # report the results
     print("\n")
@@ -402,10 +432,9 @@ def main():
         print("\n")
         print("Experiment:", res["result_name"])
         print("Used solver:", res["used_solver"])
-        print("Amount of valid counterfactuals", len(res["valid_cf"]["x_cf"]))
-        print("Amount of counterfactuals, that exceed the boundaries:", len(res["non_valid_cf"]["x_cf"]))
-        print("Amount of instances, for which no counterfactual have been found:", len(res["no_cf_found"]["x"]))
-        print("Amount of not optimal or infeasible problems:", res["not_solvable"])
+        print("Amount of plausible counterfactuals:", len(res["valid_cf"]["x_cf"]))
+        print("Amount of not-roundable counterfactuals:", len(res["non_valid_cf"]["x_cf"]))
+        print("Exceeding bounds:", len(res["exceeding_bounds"]["x_cf"]))
 
     print("\n")
     print("Accuracy score of the logistic regression:", log_reg.score(X_test, y_test))

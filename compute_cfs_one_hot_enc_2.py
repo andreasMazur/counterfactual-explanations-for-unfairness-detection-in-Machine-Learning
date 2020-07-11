@@ -60,25 +60,6 @@ def store_results(result, result_type, file_name):
                                              , quoting=csv.QUOTE_NONE)
 
 
-def descent(x_fc, x_sc, w, b, y, index):
-    """
-    A function to choose the right sub-tree in the decision tree.
-
-    :param x_fc: The 'first choice' vector. A vector with better fitting costs.
-    :param x_sc: The 'second choice' vector.  A vector with better less fitting costs.
-    :param w: The weight-vector of our logistic regression
-    :param b: The bias of our logistic regression
-    :param y: The label for 'x'
-    :param index: The index, for the element that shall be rounded.
-    :return: The correct leaf from the decision tree.
-    """
-    result = rounding(x_fc, w, b, y, index)
-    if result is None:
-        return rounding(x_sc, w, b, y, index)
-    else:
-        return result
-
-
 def rounding(x, w, b, y, index):
     """
     A function to produce a decision-tree in order to get a correctly
@@ -109,7 +90,11 @@ def rounding(x, w, b, y, index):
     x[index] = math.floor(x[index])
     x_copy[index] = math.ceil(x_copy[index])
     if in_boundaries(x, [index]) and in_boundaries(x_copy, [index]):
-        return descent(x, x_copy, w, b, y, index + 1)
+        result = rounding(x, w, b, y, index + 1)
+        if result is None:
+            return rounding(x_copy, w, b, y, index + 1)
+        else:
+            return result
     elif in_boundaries(x, [index]):
         return rounding(x, w, b, y, index + 1)
     elif in_boundaries(x_copy, [index]):
@@ -263,7 +248,8 @@ def process_data(meta_data):
         "valid_cf": {"x": [], "y": [], "x_cf": [], "y_cf": []},
         # Counterfactuals, that do not pass the filter
         "non_valid_cf": {"x": [], "y": [], "x_cf": [], "y_cf": []},
-        "exceeding_bounds": {"x": [], "y": [], "x_cf": [], "y_cf": []}
+        # Counterfactuals, for which no valid rounding was found
+        "not_rounding_found": {"x": [], "y": [], "x_cf": [], "y_cf": []}
     }
 
     # Initialize counterfactual-computation for each vector in the given data set
@@ -289,15 +275,15 @@ def process_data(meta_data):
             # 'visualization.py' for further information.
             x_cf = np.round(x_cf)
         if not_rounded:
+            result["not_rounding_found"]["x"].append(list(vector))
+            result["not_rounding_found"]["y"].append(vector_label)
+            result["not_rounding_found"]["x_cf"].append(list(x_cf))
+            result["not_rounding_found"]["y_cf"].append(y_cf)
+        elif not is_valid(x_cf, vector_label, y_cf):
             result["non_valid_cf"]["x"].append(list(vector))
             result["non_valid_cf"]["y"].append(vector_label)
             result["non_valid_cf"]["x_cf"].append(list(x_cf))
             result["non_valid_cf"]["y_cf"].append(y_cf)
-        elif not is_valid(x_cf, vector_label, y_cf):
-            result["exceeding_bounds"]["x"].append(list(vector))
-            result["exceeding_bounds"]["y"].append(vector_label)
-            result["exceeding_bounds"]["x_cf"].append(list(x_cf))
-            result["exceeding_bounds"]["y_cf"].append(y_cf)
         else:
             result["valid_cf"]["x"].append(list(vector))
             result["valid_cf"]["y"].append(vector_label)
@@ -400,30 +386,24 @@ def main():
     ILP = process_data(meta_data)
     results.append(ILP)
     store_results(ILP, "valid_cf", "valid_cf")
-    store_results(ILP, "non_valid_cf", "non_valid_cf")
 
     # 2. set of counterfactuals: ILP + not protecting attributes
     meta_data = MetaData(recidivism_data, cp.CBC, False, "ILP - npa", False, log_reg)
     ILP_npa = process_data(meta_data)
     results.append(ILP_npa)
     store_results(ILP_npa, "valid_cf", "valid_cf_npa")
-    store_results(ILP_npa, "non_valid_cf", "non_valid_cf_npa")
-    
+
     # 3. set of counterfactuals: ILP + relaxation + protected attributes
     meta_data = MetaData(recidivism_data, cp.SCS, True, "ILP - wr - pa", True, log_reg)
     ILP_wr = process_data(meta_data)
     results.append(ILP_wr)
     store_results(ILP_wr, "valid_cf", "valid_cf_wr")
-    store_results(ILP_wr, "non_valid_cf", "non_valid_cf_wr")
-    store_results(ILP_wr, "exceeding_bounds", "exceeding_bounds_wr")
 
     # 4. set of counterfactuals: ILP + relaxation + not protecting attributes
     meta_data = MetaData(recidivism_data, cp.SCS, False, "ILP - wr - npa", True, log_reg)
     ILP_wr_npa = process_data(meta_data)
     results.append(ILP_wr_npa)
     store_results(ILP_wr_npa, "valid_cf", "valid_cf_wr_npa")
-    store_results(ILP_wr_npa, "non_valid_cf", "non_valid_cf_wr_npa")
-    store_results(ILP_wr_npa, "exceeding_bounds", "exceeding_bounds_wr_npa")
 
     # report the results
     print("\n")
@@ -433,8 +413,8 @@ def main():
         print("Experiment:", res["result_name"])
         print("Used solver:", res["used_solver"])
         print("Amount of plausible counterfactuals:", len(res["valid_cf"]["x_cf"]))
-        print("Amount of not-roundable counterfactuals:", len(res["non_valid_cf"]["x_cf"]))
-        print("Exceeding bounds:", len(res["exceeding_bounds"]["x_cf"]))
+        print("Amount of counterfactuals for which no rounding was found:", len(res["not_rounding_found"]["x_cf"]))
+        print("Amount of not plausible counterfactuals:", len(res["non_valid_cf"]["x_cf"]))
 
     print("\n")
     print("Accuracy score of the logistic regression:", log_reg.score(X_test, y_test))

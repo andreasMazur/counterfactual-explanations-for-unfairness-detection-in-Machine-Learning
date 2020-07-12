@@ -25,6 +25,7 @@ VECTOR_INDEX = {"age": 0,
                 "race_Native American": 12,
                 "race_Other": 13}
 VECTOR_DIMENSION = len(VECTOR_INDEX)
+ATTRIBUTE_NAMES = list(VECTOR_INDEX.keys())
 ONE_HOT_VECTOR_START_INDEX = VECTOR_INDEX["race_African-American"]
 LOWER_BOUNDS = [0, 0, -np.inf, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 UPPER_BOUNDS = [np.inf, np.inf, np.inf, 1, 1, 1, 1, np.inf, 1, 1, 1, 1, 1, 1]

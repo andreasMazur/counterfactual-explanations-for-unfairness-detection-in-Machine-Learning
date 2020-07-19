@@ -140,27 +140,19 @@ def compute_cf(meta_data, vector):
     constraints += [ones.T @ x_cf == 1]
 
     # protected constraints
-    # TODO: Write with for-loop
     if meta_data.protected_attributes:
+        protected_attributes = [VECTOR_INDEX["age"], VECTOR_INDEX["sex"]
+                               , VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_Asian"]
+                               , VECTOR_INDEX["race_Caucasian"], VECTOR_INDEX["race_Hispanic"]
+                               , VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Other"]]
+
         coefficients = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
-        coefficients[VECTOR_INDEX["age"], VECTOR_INDEX["age"]] = 1
-        coefficients[VECTOR_INDEX["sex"], VECTOR_INDEX["sex"]] = 1
-        coefficients[VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_African-American"]] = 1
-        coefficients[VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Asian"]] = 1
-        coefficients[VECTOR_INDEX["race_Caucasian"], VECTOR_INDEX["race_Caucasian"]] = 1
-        coefficients[VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Hispanic"]] = 1
-        coefficients[VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Native American"]] = 1
-        coefficients[VECTOR_INDEX["race_Other"], VECTOR_INDEX["race_Other"]] = 1
+        for i in protected_attributes:
+            coefficients[i, i] = 1
 
         x_constants = np.zeros(VECTOR_DIMENSION)
-        x_constants[VECTOR_INDEX["age"]] = vector[VECTOR_INDEX["age"]]
-        x_constants[VECTOR_INDEX["sex"]] = vector[VECTOR_INDEX["sex"]]
-        x_constants[VECTOR_INDEX["race_African-American"]] = vector[VECTOR_INDEX["race_African-American"]]
-        x_constants[VECTOR_INDEX["race_Asian"]] = vector[VECTOR_INDEX["race_Asian"]]
-        x_constants[VECTOR_INDEX["race_Caucasian"]] = vector[VECTOR_INDEX["race_Caucasian"]]
-        x_constants[VECTOR_INDEX["race_Hispanic"]] = vector[VECTOR_INDEX["race_Hispanic"]]
-        x_constants[VECTOR_INDEX["race_Native American"]] = vector[VECTOR_INDEX["race_Native American"]]
-        x_constants[VECTOR_INDEX["race_Other"]] = vector[VECTOR_INDEX["race_Other"]]
+        for i in protected_attributes:
+            x_constants[i] = vector[i]
 
         constraints += [coefficients @ x_cf == x_constants]
 

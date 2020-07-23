@@ -61,7 +61,7 @@ def store_results(result, result_type, file_name):
                                              , quoting=csv.QUOTE_NONE)
 
 
-def rounding(x, w, b, y, index):
+def rounding(x, w, b, y, index, protectedAtttributes):
     """
     A function to produce a decision-tree in order to get a correctly
     rounded integer vector with respect to its class.
@@ -80,26 +80,25 @@ def rounding(x, w, b, y, index):
         else:
             return None
 
-    # Round one-hot-encoding
-    if index >= ONE_HOT_VECTOR_START_INDEX + 1 and x[index - 1] == 1:
-        for i in range(index, len(x)):
-            x[i] = 0
-        return rounding(x, w, b, y, len(x))
+    # Round protected attributes
+    if index in protectedAtttributes:
+        x[index] = np.round(x[index])
+        return rounding(x, w, b, y, index + 1, protectedAtttributes)
 
     # Recursion step
     x_copy = x.copy()
     x[index] = math.floor(x[index])
     x_copy[index] = math.ceil(x_copy[index])
     if in_boundaries(x, [index]) and in_boundaries(x_copy, [index]):
-        result = rounding(x, w, b, y, index + 1)
+        result = rounding(x, w, b, y, index + 1, protectedAtttributes)
         if result is None:
-            return rounding(x_copy, w, b, y, index + 1)
+            return rounding(x_copy, w, b, y, index + 1, protectedAtttributes)
         else:
             return result
     elif in_boundaries(x, [index]):
-        return rounding(x, w, b, y, index + 1)
+        return rounding(x, w, b, y, index + 1, protectedAtttributes)
     elif in_boundaries(x_copy, [index]):
-        return rounding(x_copy, w, b, y, index + 1)
+        return rounding(x_copy, w, b, y, index + 1, protectedAtttributes)
     else:
         return None
 
@@ -142,9 +141,9 @@ def compute_cf(meta_data, vector):
     # protected constraints
     if meta_data.protected_attributes:
         protected_attributes = [VECTOR_INDEX["age"], VECTOR_INDEX["sex"]
-                               , VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_Asian"]
-                               , VECTOR_INDEX["race_Caucasian"], VECTOR_INDEX["race_Hispanic"]
-                               , VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Other"]]
+            , VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_Asian"]
+            , VECTOR_INDEX["race_Caucasian"], VECTOR_INDEX["race_Hispanic"]
+            , VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Other"]]
 
         coefficients = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
         for i in protected_attributes:
@@ -199,19 +198,17 @@ def compute_cf(meta_data, vector):
 
 
 def one_hot_valid(vec):
-    seen_one = False
+    # Check whether each entry is an integer
     for i in range(ONE_HOT_VECTOR_START_INDEX, VECTOR_DIMENSION):
-        # Set the 'seen a one'-flag, since there only can be one one.
-        if vec[i] == 1:
-            seen_one = True
-        # If there's a second one, return false.
-        elif seen_one and (vec[i] == 1):
+        if not vec[i].is_integer():
             return False
-        # If the value is neither 1 nor 0, return false.
-        elif vec[i] != 1 and vec[i] != 0:
-            return False
+
+    # Check whether we only have one 1 in the one-hot encoding
+    if sum(vec[ONE_HOT_VECTOR_START_INDEX:]) != 1.0:
+        return False
+
     # Return true, if no violation happened.
-    return seen_one
+    return True
 
 
 def in_boundaries(vec, index):
@@ -254,7 +251,7 @@ def process_data(meta_data):
         if meta_data.relaxation:
             try:
                 x_cf = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
-                                , 1 - vector_label, 0)
+                                , 1 - vector_label, 0, [0, 5, 8, 9, 10, 11, 12, 13])
                 # Just to be sure, but actually 'y_cf = 1 - vector_label' could stay here.
                 y_cf = meta_data.classifier.predict(x_cf.reshape(1, -1))[0]
             except AttributeError:

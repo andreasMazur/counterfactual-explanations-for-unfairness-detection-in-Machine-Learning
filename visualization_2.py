@@ -5,7 +5,6 @@ import numpy as np
 from compute_cfs_one_hot_enc_2 import ATTRIBUTE_NAMES, ONE_HOT_VECTOR_START_INDEX, VECTOR_DIMENSION
 from scipy.stats import chi2_contingency
 from matplotlib import pyplot as plt
-from matplotlib.colors import ListedColormap
 import seaborn as sns
 
 
@@ -102,6 +101,7 @@ def one_hot_to_ordinal(data, skip_cf=False):
     4 <- Native American
     5 <- Other
 
+    :param skip_cf: 
     :param data:
     :return:
     """
@@ -112,7 +112,7 @@ def one_hot_to_ordinal(data, skip_cf=False):
     for category in categories:
         # Compute labels
         new_encoding = []
-        for _, row in data[category].iterrows():
+        for index, row in data[category].iterrows():
             # Search for non-zero entry
             for i, race in enumerate(list(row[ONE_HOT_VECTOR_START_INDEX:])):
                 if race == 1:
@@ -168,12 +168,13 @@ def read_data(file_name, skip_cf=False):
 
 
 def main():
+
     # Compute correlations
     data_set = read_data("x_values.csv", True)
     data_set = one_hot_to_ordinal(data_set, True)
     print(compute_correlations(data_set["x"], "heatmap.png"))
 
-    """
+    # Compute the histograms
     valid_cf = read_data("valid_cf.csv")
     valid_cf = one_hot_to_ordinal(valid_cf)
     plot_histogram(compute_delta_vectors(valid_cf),
@@ -193,7 +194,6 @@ def main():
     valid_cf_wr_npa = one_hot_to_ordinal(valid_cf_wr_npa)
     plot_histogram(compute_delta_vectors(valid_cf_wr_npa),
                    "ILP with relaxation. Suggested changes per attribute. Not protecting sensitive information.")
-    """
 
 
 if __name__ == "__main__":

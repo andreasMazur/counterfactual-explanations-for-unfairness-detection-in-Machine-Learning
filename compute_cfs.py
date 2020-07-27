@@ -9,6 +9,8 @@ import cvxpy as cp
 import math
 import sys
 
+
+# Constants that will be used throughout this project.
 CSV_FILE = "compas-scores-two-years.csv"
 VECTOR_INDEX = {"age": 0,
                 "priors_count": 1,
@@ -37,41 +39,60 @@ class MetaData:
     multiple points in the computing process.
     """
 
-    def __init__(self, data, solver, protected_attributes, result_name, relaxation, classifier):
+    def __init__(self, data, solver, result_name, relaxation, classifier):
         """
-
-        :param data:
-        :param solver:
-        :param protected_attributes:
-        :param result_name:
-        :param relaxation:
-        :param classifier:
+        :param data: 'pandas.core.frame.DataFrame'
+                     The pre-processed vectors from the database
+        :param solver: 'str'
+                       The solver, that will be used to compute the counterfactuals
+        :param result_name: 'str'
+                            The name (respectively id) of the result
+        :param relaxation: 'bool'
+                           Tells if relaxation should be applied or not
+        :param classifier: 'sklearn.linear_model.LogisticRegression'
+                           The used classifier
         """
         self.data = data
         self.solver = solver
-        self.protected_attributes = protected_attributes
         self.result_name = result_name
         self.relaxation = relaxation
         self.classifier = classifier
 
 
-def store_results(result, result_type, file_name):
-    pd.DataFrame(result[result_type]).to_csv(f"{file_name}.csv"
-                                             , index=False, sep=";"
-                                             , quoting=csv.QUOTE_NONE)
-
-
-def rounding(x, w, b, y, index, protectedAtttributes):
+def store_results(result, sub_dict_to_store, file_name):
     """
-    A function to produce a decision-tree in order to get a correctly
+    Function, that stores the result of the 'process_data'-function.
+
+    :param result: 'dict'
+                   The result-dictionary of the 'process_data'-function
+    :param sub_dict_to_store: 'dict'
+                               The sub-dictionary within 'result', which
+                               shall be stored.
+    :param file_name: 'str'
+                      The filename of the resulting csv-file
+    """
+    pd.DataFrame(result[sub_dict_to_store]).to_csv(f"{file_name}.csv"
+                                                   , index=False, sep=";"
+                                                   , quoting=csv.QUOTE_NONE)
+
+
+def rounding(x, w, b, y, index):
+    """
+    A function to produce a tree in order to get a correctly
     rounded integer vector with respect to its class.
 
-    :param x: The counterfactual that shall be rounded
-    :param w: The weight-vector of our logistic regression
-    :param b: The bias of our logistic regression
-    :param y: The label for 'x'
-    :param index: The index, for the element that shall be rounded.
-    :return: A counterfactual with only integer entries.
+    :param x: 'numpy.ndarray'
+              The counterfactual that shall be rounded
+    :param w: 'numpy.ndarray'
+              The weight-vector of our logistic regression
+    :param b: 'numpy.ndarray'
+              The bias of our logistic regression
+    :param y: 'numpy.int64'
+              The label for 'x'
+    :param index: 'int'
+                  The index, for the element that shall be rounded.
+    :return: 'numpy.ndarray'
+             A counterfactual with only integer entries.
     """
     # Base case
     if index == len(x):
@@ -80,30 +101,36 @@ def rounding(x, w, b, y, index, protectedAtttributes):
         else:
             return None
 
-    # Round protected attributes
-    if index in protectedAtttributes:
-        x[index] = np.round(x[index])
-        return rounding(x, w, b, y, index + 1, protectedAtttributes)
-
     # Recursion step
     x_copy = x.copy()
     x[index] = math.floor(x[index])
     x_copy[index] = math.ceil(x_copy[index])
     if in_boundaries(x, [index]) and in_boundaries(x_copy, [index]):
-        result = rounding(x, w, b, y, index + 1, protectedAtttributes)
+        result = rounding(x, w, b, y, index + 1)
         if result is None:
-            return rounding(x_copy, w, b, y, index + 1, protectedAtttributes)
+            return rounding(x_copy, w, b, y, index + 1)
         else:
             return result
     elif in_boundaries(x, [index]):
-        return rounding(x, w, b, y, index + 1, protectedAtttributes)
+        return rounding(x, w, b, y, index + 1)
     elif in_boundaries(x_copy, [index]):
-        return rounding(x_copy, w, b, y, index + 1, protectedAtttributes)
+        return rounding(x_copy, w, b, y, index + 1)
     else:
         return None
 
 
 def manhatten_dist(x, x_cf):
+    """
+    The usual Manhatten-distance as known.
+
+    :param x: 'numpy.ndarray'
+               The original vector.
+    :param x_cf: 'cvxpy.expression.variable.Variable'
+                 The counterfactual explanation for 'x'.
+    :return: sum: 'int'
+                  The manhatten distance between x and x_cf.
+
+    """
     sum = 0
     for j in range(x.shape[0]):
         sum += cp.abs(x[j] - x_cf[j])
@@ -111,6 +138,27 @@ def manhatten_dist(x, x_cf):
 
 
 def compute_cf(meta_data, vector):
+    """
+    The function that solves the optimization problem for computing
+    counterfactual explanations, that was phrased in:
+
+    'On the computation of counterfactual explanations -- A survey
+    2019 by André Artelt and Barbara Hammer'
+
+    with an extra few boundary constraints, that were stated in the
+    bachelor thesis.
+
+    :param meta_data: 'MetaData'
+                      Carries information about how the calculation
+                      shall be structured.
+    :param vector: 'numpy.ndarray'
+                    The vector, for which a counterfactual shall be
+                    computed.
+    :return: 'numpy.ndarray', 'numpy.int64'
+             The result of the optimization problem and it's label
+             respectively class.
+    """
+
     # predicts the opposite of the current prediction
     y = meta_data.classifier.predict(vector.reshape(1, -1))
     y_target = 1 - y
@@ -138,23 +186,6 @@ def compute_cf(meta_data, vector):
         ones[i] = 1
     constraints += [ones.T @ x_cf == 1]
 
-    # protected constraints
-    if meta_data.protected_attributes:
-        protected_attributes = [VECTOR_INDEX["age"], VECTOR_INDEX["sex"]
-            , VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_Asian"]
-            , VECTOR_INDEX["race_Caucasian"], VECTOR_INDEX["race_Hispanic"]
-            , VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Other"]]
-
-        coefficients = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
-        for i in protected_attributes:
-            coefficients[i, i] = 1
-
-        x_constants = np.zeros(VECTOR_DIMENSION)
-        for i in protected_attributes:
-            x_constants[i] = vector[i]
-
-        constraints += [coefficients @ x_cf == x_constants]
-
     # lower bounds
     lower_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
     for i in [VECTOR_INDEX["age"], VECTOR_INDEX["priors_count"]
@@ -170,21 +201,17 @@ def compute_cf(meta_data, vector):
 
     # upper bounds
     upper_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
-    for i in [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
+    upper_bounds_indices = [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
         , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
         , VECTOR_INDEX["race_African-American"]
         , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
         , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
-        , VECTOR_INDEX["race_Other"]]:
+        , VECTOR_INDEX["race_Other"]]
+    for i in upper_bounds_indices:
         upper_bounds[i, i] = 1
 
     ub_vector = np.zeros(VECTOR_DIMENSION)
-    for i in [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
-        , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
-        , VECTOR_INDEX["race_African-American"]
-        , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
-        , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
-        , VECTOR_INDEX["race_Other"]]:
+    for i in upper_bounds_indices:
         ub_vector[i] = 1
     constraints += [upper_bounds @ (x_cf - ub_vector) <= 0]
 
@@ -198,6 +225,15 @@ def compute_cf(meta_data, vector):
 
 
 def one_hot_valid(vec):
+    """
+    Checks if a vector contains a valid one-hot encoding.
+
+    :param vec: 'numpy.ndarray'
+                The vector, for which the included one-hot vector
+                shall be checked.
+    :return: 'bool'
+             The test result.
+    """
     # Check whether each entry is an integer
     for i in range(ONE_HOT_VECTOR_START_INDEX, VECTOR_DIMENSION):
         if not vec[i].is_integer():
@@ -212,6 +248,16 @@ def one_hot_valid(vec):
 
 
 def in_boundaries(vec, index):
+    """
+    Checks if the values in a vector are within their bounds.
+
+    :param vec: 'numpy.ndarray'
+                The vector, for which the values shall be checked.
+    :param index: 'range'
+                  The indices for which the boundaries shall be checked
+    :return: 'bool'
+             The test result.
+    """
     in_range = True
     for i in index:
         in_range = in_range and LOWER_BOUNDS[i] <= vec[i] <= UPPER_BOUNDS[i]
@@ -221,15 +267,35 @@ def in_boundaries(vec, index):
 
 
 def is_valid(vec, y, y_cf):
+    """
+    Checks if a vectors is plausible or not.
+
+    :param vec: 'numpy.ndarray'
+                 The counterfactual, that shall be tested
+    :param y: 'numpy.int64'
+               The original class of the original vector from vec
+    :param y_cf: 'numpy.int64'
+                 The class of the counterfactual 'vec'
+    :return:
+    """
     return in_boundaries(vec, range(VECTOR_DIMENSION)) and one_hot_valid(vec) and y != y_cf
 
 
 def process_data(meta_data):
     """
+    The function that initializes and organizes the computation
+    of the counterfactuals for the pre-processed data.
 
-    :param meta_data:
-    :return:
+    :param meta_data: 'MetaData'
+                      Carries information about how the calculation
+                      shall be structured.
+    :return: 'dict'
+             A result-dictionary containing the original x-vectors, their
+             y-values as well as their counterfactuals and their y_cf values.
+             It is structured into sub-dictionaries, that are necessary due to
+             the filtering process that the 'process_data' function applies.
     """
+
     # A dictionary to classify the results
     result = {
         "result_name": meta_data.result_name,
@@ -239,7 +305,7 @@ def process_data(meta_data):
         # Counterfactuals, that do not pass the filter
         "non_valid_cf": {"x": [], "y": [], "x_cf": [], "y_cf": []},
         # Counterfactuals, for which no valid rounding was found
-        "not_rounding_found": {"x": [], "y": [], "x_cf": [], "y_cf": []}
+        "no_rounding_found": {"x": [], "y": [], "x_cf": [], "y_cf": []}
     }
 
     # Initialize counterfactual-computation for each vector in the given data set
@@ -249,26 +315,26 @@ def process_data(meta_data):
         x_cf, y_cf = compute_cf(meta_data, vector)
         not_rounded = False
         if meta_data.relaxation:
-            try:
-                x_cf = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
-                                , 1 - vector_label, 0, [0, 5, 8, 9, 10, 11, 12, 13])
-                # Just to be sure, but actually 'y_cf = 1 - vector_label' could stay here.
-                y_cf = meta_data.classifier.predict(x_cf.reshape(1, -1))[0]
-            except AttributeError:
+            x_cf = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
+                            , 1 - vector_label, 0)
+            if x_cf is None:
                 x_cf, y_cf = compute_cf(meta_data, vector)
                 not_rounded = True
+            else:
+                y_cf = meta_data.classifier.predict(x_cf.reshape(1, -1))[0]
         else:
-            # Values need to be integers and sometimes even though we use
-            # CBC (in this case) we have .9999... values. If we do not round here,
-            # we probably will have non-zero entries in rows where we actually should have
-            # zero-entries, when we count the changes. See 'detect_amount_of_changes' in
-            # 'visualization.py' for further information.
+            # The values need to be integers. Sometimes, even though we use
+            # CBC (in this case), we have values that are only very close to integers.
+            # If we do not round here, we probably will have non-zero entries in rows
+            # where we actually should have zero-entries, when we count the changes.
+            # See 'plot_histogram' and 'count_changes' in 'visualization.py' for
+            # further information.
             x_cf = np.round(x_cf)
         if not_rounded:
-            result["not_rounding_found"]["x"].append(list(vector))
-            result["not_rounding_found"]["y"].append(vector_label)
-            result["not_rounding_found"]["x_cf"].append(list(x_cf))
-            result["not_rounding_found"]["y_cf"].append(y_cf)
+            result["no_rounding_found"]["x"].append(list(vector))
+            result["no_rounding_found"]["y"].append(vector_label)
+            result["no_rounding_found"]["x_cf"].append(list(x_cf))
+            result["no_rounding_found"]["y_cf"].append(y_cf)
         elif not is_valid(x_cf, vector_label, y_cf):
             result["non_valid_cf"]["x"].append(list(vector))
             result["non_valid_cf"]["y"].append(vector_label)
@@ -286,11 +352,22 @@ def process_data(meta_data):
 
 def get_data():
     """
-    Reads the 'compas-scores-two-years.csv'-file, filters it with mostly the same conditions
-    that have been used in the Propublica-analysis and provides train and test sets for
-    the logistic regression.
+    Reads the 'compas-scores-two-years.csv'-file from:
+
+    'How We Analyzed the COMPAS Recidivism Algorithm - ProPublica
+    2016 by Jeff Larson, Surya Mattu, Lauren Kirchner and Julia Angwin'
+
+    (Needs to be downloaded from their github-repository:
+     https://github.com/propublica/compas-analysis )
+
+    and filters it with nearly the same conditions as in their analysis.
+
+    After filtering the data-set, it continues with the preprocessing
+    as described in the bachelor thesis.
 
     :return: 'pandas.core.frame.DataFrame', 'list'
+             The pre-processed data from the data set 'compas-scores-two-years.csv'
+             and a list of labels in the corresponding order to the data set.
     """
 
     # raw data
@@ -371,29 +448,17 @@ def main():
     results = []
 
     ##### COMPUTING COUNTERFACTUALS #####
-    # 1. set of counterfactuals: ILP + protected attributes
-    meta_data = MetaData(recidivism_data, cp.CBC, True, "ILP - pa", False, log_reg)
-    ILP = process_data(meta_data)
-    results.append(ILP)
-    store_results(ILP, "valid_cf", "valid_cf")
-
-    # 2. set of counterfactuals: ILP + not protecting attributes
-    meta_data = MetaData(recidivism_data, cp.CBC, False, "ILP - npa", False, log_reg)
+    # 1. set of counterfactuals: ILP
+    meta_data = MetaData(recidivism_data, cp.CBC, "Integer Linear Programming", False, log_reg)
     ILP_npa = process_data(meta_data)
     results.append(ILP_npa)
-    store_results(ILP_npa, "valid_cf", "valid_cf_npa")
+    store_results(ILP_npa, "valid_cf", "cf")
 
-    # 3. set of counterfactuals: ILP + relaxation + protected attributes
-    meta_data = MetaData(recidivism_data, cp.SCS, True, "ILP - wr - pa", True, log_reg)
-    ILP_wr = process_data(meta_data)
-    results.append(ILP_wr)
-    store_results(ILP_wr, "valid_cf", "valid_cf_wr")
-
-    # 4. set of counterfactuals: ILP + relaxation + not protecting attributes
-    meta_data = MetaData(recidivism_data, cp.SCS, False, "ILP - wr - npa", True, log_reg)
+    # 2. set of counterfactuals: ILP + relaxation
+    meta_data = MetaData(recidivism_data, cp.SCS, "Integer Linear Programming with relaxation", True, log_reg)
     ILP_wr_npa = process_data(meta_data)
     results.append(ILP_wr_npa)
-    store_results(ILP_wr_npa, "valid_cf", "valid_cf_wr_npa")
+    store_results(ILP_wr_npa, "valid_cf", "cf_wr")
 
     # report the results
     print("\n")
@@ -402,9 +467,9 @@ def main():
         print("\n")
         print("Experiment:", res["result_name"])
         print("Used solver:", res["used_solver"])
-        print("Amount of plausible counterfactuals:", len(res["valid_cf"]["x_cf"]))
-        print("Amount of counterfactuals for which no rounding was found:", len(res["not_rounding_found"]["x_cf"]))
-        print("Amount of not plausible counterfactuals:", len(res["non_valid_cf"]["x_cf"]))
+        print("Amount of valid counterfactuals:", len(res["valid_cf"]["x_cf"]))
+        print("Amount of counterfactuals for which no rounding was found:", len(res["no_rounding_found"]["x_cf"]))
+        print("Amount of not valid counterfactuals:", len(res["non_valid_cf"]["x_cf"]))
 
     print("\n")
     print("Accuracy score of the logistic regression:", log_reg.score(X_test, y_test))

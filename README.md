@@ -30,7 +30,7 @@ You will have to download it from there.
 ### What is the code doing?
 
 The code pre-processes the data from '_compas-scores-two-years.csv_', such that
-we can train a logistic regression via that data. Than, we compute counterfactual
+we can train a logistic regression with that data. Then, we compute counterfactual
 explanations for the pre-processed vectors by solving a constrained optimization
 problem. The counterfactuals will be stored within csv-files in the same directiory
 as the code-files. In the end, you can visualize the results with the '_visualiztaion.py_'-file.

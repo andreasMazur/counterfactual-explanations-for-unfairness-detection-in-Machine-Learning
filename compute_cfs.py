@@ -442,12 +442,13 @@ def main():
     X_train, X_test, y_train, y_test = train_test_split(recidivism_data, label, test_size=0.33, random_state=1337)
 
     # Train the logistic regression
-    log_reg = LogisticRegression(max_iter=1500).fit(X_train, y_train)
+    log_reg = LogisticRegression(max_iter=400).fit(X_train, y_train)
 
     # List for collecting the results
     results = []
 
     ##### COMPUTING COUNTERFACTUALS #####
+
     # 1. set of counterfactuals: ILP
     meta_data = MetaData(recidivism_data, cp.CBC, "Integer Linear Programming", False, log_reg)
     ILP_npa = process_data(meta_data)
@@ -467,9 +468,9 @@ def main():
         print("\n")
         print("Experiment:", res["result_name"])
         print("Used solver:", res["used_solver"])
-        print("Amount of valid counterfactuals:", len(res["valid_cf"]["x_cf"]))
+        print("Amount of plausible counterfactuals:", len(res["valid_cf"]["x_cf"]))
         print("Amount of counterfactuals for which no rounding was found:", len(res["no_rounding_found"]["x_cf"]))
-        print("Amount of not valid counterfactuals:", len(res["non_valid_cf"]["x_cf"]))
+        print("Amount of not plausible counterfactuals:", len(res["non_valid_cf"]["x_cf"]))
 
     print("\n")
     print("Accuracy score of the logistic regression:", log_reg.score(X_test, y_test))

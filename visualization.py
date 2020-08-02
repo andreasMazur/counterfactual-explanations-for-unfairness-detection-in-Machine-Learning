@@ -6,6 +6,15 @@ from compute_cfs import ATTRIBUTE_NAMES, ONE_HOT_VECTOR_START_INDEX
 from scipy.stats import chi2_contingency
 from matplotlib import pyplot as plt
 import seaborn as sns
+import csv
+
+COLUMN_NAMES = ["age", "priors_count", "days_b_screening_arrest"
+    , "is_recid", "two_year_recid", "sex", "charge_degree"
+    , "time_in_jail", "race"]
+CHG_PER_GROUP_FILENAMES = ["chg_per_groups_r.csv", "chg_per_groups_wr_r.csv"
+    , "chg_per_groups_s.csv", "chg_per_groups_wr_s.csv"]
+AMT_PER_GROUP_FILENAMES = ["amt_per_groups_r.csv", "amt_per_groups_wr_r.csv"
+    , "amt_per_groups_s.csv", "amt_per_groups_wr_s.csv"]
 
 
 def bias_corrected_cramers_V(attribute1, attribute2):
@@ -35,10 +44,10 @@ def bias_corrected_cramers_V(attribute1, attribute2):
     # Compute the corrected cramer's V-value
     n = len(attribute1)
     r = len(contingency_table)
-    r_tilde = r - 1/(n - 1) * (r - 1)**2
+    r_tilde = r - 1 / (n - 1) * (r - 1) ** 2
     c = len(contingency_table.columns)
-    c_tilde = c - 1/(n - 1) * (c - 1)**2
-    Phi = (chi2_value / n) - 1/(n - 1) * (r - 1) * (c - 1)
+    c_tilde = c - 1 / (n - 1) * (c - 1) ** 2
+    Phi = (chi2_value / n) - 1 / (n - 1) * (r - 1) * (c - 1)
     Phi_plus = max(0, Phi)
     cramers_corrected_v = np.sqrt(Phi_plus / min(r_tilde - 1, c_tilde - 1))
     return cramers_corrected_v
@@ -125,6 +134,12 @@ def plot_histogram(data, plot_title, to_color, trace_names):
     :param trace_names: 'list'
                         A list containing the group names, that will be displayed
                         in the histogram.
+    :return changes_per_attribute: 'list'
+                                    A list with the changes per attribute
+                                    for each group.
+            amount_ppl_in_group: 'list'
+                                 A list with the amount of people in each
+                                 group.
     """
     # Remember old values for to_color
     remember = list(data["x"][to_color])
@@ -138,18 +153,16 @@ def plot_histogram(data, plot_title, to_color, trace_names):
     for _, row in delta_vectors.iterrows():
         delta_vectors_by_to_color[int(row[f"{to_color}_old"])].append(list(row)[:len(row) - 1])
 
-    print(f"Amount of people in each group: (sorted by {to_color})")
+    amount_ppl_in_group = []
     for i in range(len(delta_vectors_by_to_color)):
-        print(i, ":", len(delta_vectors_by_to_color[i]))
-    print("\n")
+        amount_ppl_in_group.append(len(delta_vectors_by_to_color[i]))
+        print(amount_ppl_in_group)
 
     # Count the changes
     changes_per_attribute = count_changes(delta_vectors_by_to_color)
 
     # Plot the histogram
-    x_axis = ["age", "priors_count", "days_b_screening_arrest"
-              , "is_recid", "two_year_recid", "sex", "charge_degree"
-              , "time_in_jail", "race"]
+    x_axis = COLUMN_NAMES
 
     fig = go.Figure()
     for i in range(len(trace_names)):
@@ -157,6 +170,8 @@ def plot_histogram(data, plot_title, to_color, trace_names):
 
     fig.update_layout(barmode='relative', title_text=plot_title)
     fig.show()
+
+    return changes_per_attribute, amount_ppl_in_group
 
 
 def one_hot_to_label(data, skip_cf=False):
@@ -229,11 +244,12 @@ def read_data(file_name, skip_cf=False):
 
 
 def main():
+    """
     # Compute correlations
     data_set = read_data("x_values.csv", True)
     data_set = one_hot_to_label(data_set, True)
     compute_correlations(data_set["x"], "heatmap.png")
-
+    """
     # Read the data and convert one-hot encoding to label encoding
     valid_cf_npa = read_data("cf.csv")
     valid_cf_npa = one_hot_to_label(valid_cf_npa)
@@ -243,12 +259,29 @@ def main():
 
     # Compute the histograms (colored by race)
     trace_names = list(map(lambda a: a[5:], ATTRIBUTE_NAMES[ONE_HOT_VECTOR_START_INDEX:]))
-    plot_histogram(valid_cf_npa, "Integer Linear Programming", "race", trace_names)
-    plot_histogram(valid_cf_wr_npa, "ILP with relaxation", "race", trace_names)
+    chg_per_group1, amt_ppl_in_group1 = plot_histogram(valid_cf_npa, "Integer Linear Programming", "race", trace_names)
+    chg_per_group2, amt_ppl_in_group2 = plot_histogram(valid_cf_wr_npa, "ILP with relaxation", "race", trace_names)
 
     # Compute the histograms (colored by sex)
-    plot_histogram(valid_cf_npa, "Integer Linear Programming", "sex", ["female", "male"])
-    plot_histogram(valid_cf_wr_npa, "ILP with relaxation", "sex", ["female", "male"])
+    chg_per_group3, amt_ppl_in_group3 = plot_histogram(valid_cf_npa, "Integer Linear Programming", "sex",
+                                                       ["female", "male"])
+    chg_per_group4, amt_ppl_in_group4 = plot_histogram(valid_cf_wr_npa, "ILP with relaxation", "sex",
+                                                       ["female", "male"])
+
+    # Export the changes per group for further analysis
+    changes_per_groups = [chg_per_group1, chg_per_group2, chg_per_group3, chg_per_group4]
+    for changes, filename in zip(changes_per_groups, CHG_PER_GROUP_FILENAMES):
+        pd.DataFrame(changes, columns=COLUMN_NAMES).to_csv(filename
+                                                           , index=False
+                                                           , sep=";"
+                                                           , quoting=csv.QUOTE_NONE)
+
+    amount_per_group = [amt_ppl_in_group1, amt_ppl_in_group2, amt_ppl_in_group3, amt_ppl_in_group4]
+    for amt, filename in zip(amount_per_group, AMT_PER_GROUP_FILENAMES):
+        pd.DataFrame(amt).to_csv(filename
+                                 , index=False
+                                 , sep=";"
+                                 , quoting=csv.QUOTE_NONE)
 
 
 if __name__ == "__main__":

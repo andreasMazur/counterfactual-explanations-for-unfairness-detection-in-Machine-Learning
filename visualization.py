@@ -1,288 +1,92 @@
-import pandas as pd
-import ast
 import plotly.graph_objects as go
-import numpy as np
-from compute_cfs import ATTRIBUTE_NAMES, ONE_HOT_VECTOR_START_INDEX
-from scipy.stats import chi2_contingency
-from matplotlib import pyplot as plt
 import seaborn as sns
-import csv
+from csv_parsing_writing import read_result
+from matplotlib import pyplot as plt
 
-COLUMN_NAMES = ["age", "priors_count", "days_b_screening_arrest"
-    , "is_recid", "two_year_recid", "sex", "charge_degree"
-    , "time_in_jail", "race"]
-CHG_PER_GROUP_FILENAMES = ["chg_per_groups_r.csv", "chg_per_groups_wr_r.csv"
-    , "chg_per_groups_s.csv", "chg_per_groups_wr_s.csv"]
-AMT_PER_GROUP_FILENAMES = ["amt_per_groups_r.csv", "amt_per_groups_wr_r.csv"
-    , "amt_per_groups_s.csv", "amt_per_groups_wr_s.csv"]
+from test_counterfactual import ATTRIBUTE_NAMES, ONE_HOT_VECTOR_START_INDEX
+from cramers_v import compute_correlations
+from grouping_and_counting import count_changes_for_groups, one_hot_to_label, COLUMN_NAMES
 
 
-def bias_corrected_cramers_V(attribute1, attribute2):
+CHG_PER_GROUP_FILENAMES = ["changes_per_race.csv", "wr_changes_per_race.csv"
+    , "changes_per_sex.csv", "wr_changes_per_sex.csv"]
+AMT_PER_GROUP_FILENAMES = ["ppl_per_race.csv", "wr_ppl_per_race.csv"
+    , "ppl_per_sex.csv", "wr_ppl_per_sex.csv"]
+
+
+def plot_histogram(plot_title, data, group_names, x_axis):
     """
-    Compute the bias corrected Cramér's V value for two
-    categorical attributes after:
+    Plots the histogram, while it groups the data set after people
+    with a certain characteristic.
 
-    Bergsma, Wicher. (2013). A bias-correction for Cramér's V and Tschuprow's T.
-    Journal of the Korean Statistical Society. 42. 10.1016/j.jkss.2012.10.002.
-
-    :param attribute1: 'pandas.core.series.Series'
-                       A categorical attribute.
-    :param attribute2: 'pandas.core.series.Series'
-                       A categorical attribute.
-    :return: 'numpy.float64'
-             The corrected Cramér's V value for 'attribute1' and 'attribute2'
+    :param plot_title: 'str'
+                        The title of the histogram.
+    :param data : 'list'
+                  Two-dimensional list containing groups (fst. dimension)
+                  and their y-values (snd. dimension) ordered by 'x-axis'.
+    :param group_names: 'list'
+                        A list containing the group names, that will be displayed
+                        in the histogram.
+    :param x_axis: 'list'
+                   A list that contains the labels for the x-axis.
     """
+    if len(data) != len(group_names):
+        raise Exception("Unequal amount of group names and groups.")
 
-    if len(attribute1) != len(attribute2):
-        raise Exception("You have more values in one column than in the other.")
-    rows = pd.Categorical(attribute1)
-    columns = pd.Categorical(attribute2)
-    # Create the contingency table
-    contingency_table = pd.crosstab(rows, columns)
-    # Calculate the chi2-value
-    chi2_value = chi2_contingency(contingency_table)[0]
-    # Compute the corrected cramer's V-value
-    n = len(attribute1)
-    r = len(contingency_table)
-    r_tilde = r - 1 / (n - 1) * (r - 1) ** 2
-    c = len(contingency_table.columns)
-    c_tilde = c - 1 / (n - 1) * (c - 1) ** 2
-    Phi = (chi2_value / n) - 1 / (n - 1) * (r - 1) * (c - 1)
-    Phi_plus = max(0, Phi)
-    cramers_corrected_v = np.sqrt(Phi_plus / min(r_tilde - 1, c_tilde - 1))
-    return cramers_corrected_v
+    fig = go.Figure()
+    for i in range(len(data)):
+        fig.add_trace(go.Bar(x=x_axis, y=data[i], name=group_names[i]))
+
+    fig.update_layout(barmode='relative', title_text=plot_title)
+    fig.show()
 
 
-def compute_correlations(data, heatmap_name):
-    """
-    Creates heatmap with Cramér's V values for every attribute-pair.
-
-    :param data: 'pandas.core.frame.DataFrame'
-                  The original x-vectors for the counterfactuals.
-    :param heatmap_name: 'str'
-                         The filename for the heatmap.
-    """
-
-    # Compute the cramers-V-value for each attribute-pair
-    cramers_v_table = pd.DataFrame(index=data.columns, columns=data.columns)
-
-    for i, fst_column in enumerate(data):
-        for j, snd_column in enumerate(data):
-            # The chi2 value for two attributes is symmetric
-            if i <= j:
-                print("Currently computing Cramer's V for:", fst_column, snd_column)
-                cramers_v_value = bias_corrected_cramers_V(data[fst_column], data[snd_column])
-                # Add Cramers'V value
-                cramers_v_table.at[snd_column, fst_column] = cramers_v_value
-
-    cramers_v_table = cramers_v_table.apply(pd.to_numeric)
+def create_plots():
+    # Plot Cramer's V values
+    data_set = read_result("x_values.csv", True)
+    correlations = compute_correlations(data_set)
     fig, ax = plt.subplots(figsize=(10, 5))
-    sns.heatmap(cramers_v_table, annot=True
+    sns.heatmap(correlations, annot=True
                 , cmap=plt.cm.Reds
                 , ax=ax
                 , linewidths=0.5
                 , linecolor='black')
     plt.title("Corrected Cramer's V - values")
     plt.tight_layout()
-    plt.savefig(heatmap_name)
+    plt.savefig("heatmap.png")
     plt.show()
 
+    # Read the experiment results
+    valid_cf_npa = read_result("cf.csv")
+    valid_cf_wr_npa = read_result("cf_wr.csv")
 
-def count_changes(delta_vectors):
-    """
-    Count the non-zero entries for every delta vector in every
-    dimension.
+    # Convert One-Hot columns to label-encoding
+    one_hot_to_label(valid_cf_npa)
+    one_hot_to_label(valid_cf_wr_npa)
 
-    :param delta_vectors: 'list'
-                          3 dimensional list:
-                          - First dimension: The groups
-                          - Second dimension: The people
-                          - Third dimension: The attributes of the people
-                          Contains the difference between the counterfactuals
-                          and their original vectors.
-    :return: 'numpy.ndarray'
-             2D array:
-             - First dimension: The groups
-             - Second dimension: The amounts of changes per attribute
-    """
-    # Count non-null values for each attribute
-    changes_per_attribute = np.zeros((len(delta_vectors), len(delta_vectors[0][0])))
-    # per race
-    for i in range(len(delta_vectors)):
-        # per person
-        for j in range(len(delta_vectors[i])):
-            # per attribute
-            for k in range(len(delta_vectors[0][0])):
-                if delta_vectors[i][j][k] != 0:
-                    changes_per_attribute[i][k] += 1
-    return changes_per_attribute.tolist()
-
-
-def plot_histogram(data, plot_title, to_color, trace_names):
-    """
-    Plots the histogram, while it groups the data set after people
-    with a certain characteristic.
-
-    :param data: 'dict'
-                 A result-dictionary containing the original x-vectors, their
-                 y-values as well as their counterfactuals and their y_cf values.
-                 Usually just imported via 'read_data'-function.
-    :param plot_title: 'str'
-                        The title of the histogram.
-    :param to_color: 'str'
-                      The attribute after which the people are grouped.
-    :param trace_names: 'list'
-                        A list containing the group names, that will be displayed
-                        in the histogram.
-    :return changes_per_attribute: 'list'
-                                    A list with the changes per attribute
-                                    for each group.
-            amount_ppl_in_group: 'list'
-                                 A list with the amount of people in each
-                                 group.
-    """
-    # Remember old values for to_color
-    remember = list(data["x"][to_color])
-
-    # Compute delta vectors
-    delta_vectors = data["x_cf"] - data["x"]
-    delta_vectors[f"{to_color}_old"] = remember
-
-    # Sort by attribute "to_color_old"
-    delta_vectors_by_to_color = [[] for _ in range(len(trace_names))]
-    for _, row in delta_vectors.iterrows():
-        delta_vectors_by_to_color[int(row[f"{to_color}_old"])].append(list(row)[:len(row) - 1])
-
-    amount_ppl_in_group = []
-    for i in range(len(delta_vectors_by_to_color)):
-        amount_ppl_in_group.append(len(delta_vectors_by_to_color[i]))
-        print(amount_ppl_in_group)
-
-    # Count the changes
-    changes_per_attribute = count_changes(delta_vectors_by_to_color)
-
-    # Plot the histogram
-    x_axis = COLUMN_NAMES
-
-    fig = go.Figure()
-    for i in range(len(trace_names)):
-        fig.add_trace(go.Bar(x=x_axis, y=changes_per_attribute[i], name=trace_names[i]))
-
-    fig.update_layout(barmode='relative', title_text=plot_title)
-    fig.show()
-
-    return changes_per_attribute, amount_ppl_in_group
-
-
-def one_hot_to_label(data, skip_cf=False):
-    """
-    Re-encodes the one-hot vector to label-encoding.
-
-    Assignment:
-    0 <- African American
-    1 <- Asian
-    2 <- Caucasian
-    3 <- Hispanic
-    4 <- Native American
-    5 <- Other
-
-    :param data: 'dict'
-                 A result-dictionary containing the original x-vectors, their
-                 y-values as well as their counterfactuals and their y_cf values.
-                 Usually just imported via 'read_data'-function.
-    :param skip_cf: 'bool'
-                    The bool tells, if the result-dict contains counterfactuals.
-                    If it does, just let the value be 'False'. Otherwise, tell
-                    to skip the counterfactuals by stating it to be 'True'.
-    :return: The result-dictionary but with label-encoded races instead of
-             one-hot vectors.
-    """
-    categories = ["x"]
-    if not skip_cf:
-        categories.append("x_cf")
-
-    for category in categories:
-        # Compute labels
-        new_encoding = []
-        for index, row in data[category].iterrows():
-            # Search for non-zero entry
-            for i, race in enumerate(list(row[ONE_HOT_VECTOR_START_INDEX:])):
-                if race == 1:
-                    new_encoding.append(i)
-
-        # Exchange one-hot columns with ordinal encoding
-        data[category].drop(columns=ATTRIBUTE_NAMES[ONE_HOT_VECTOR_START_INDEX:], inplace=True)
-        data[category]["race"] = new_encoding
-
-    return data
-
-
-def read_data(file_name, skip_cf=False):
-    """
-    :param file_name: 'str'
-                      The file from which the data shall be read.
-                      Has to be an output file of the 'compute_cfs'
-                      program.
-    :param skip_cf: 'bool'
-                    The bool tells, if the result-dict contains counterfactuals.
-                    If it does, just let the value be 'False'. Otherwise, tell
-                    to skip the counterfactuals by stating it to be 'True'.
-    :return: 'dict'
-             A dictionary containing a result of the 'compute_cfs' program.
-    """
-
-    data = pd.read_csv(file_name, sep=";")
-    if skip_cf:
-        data_dict = {"x": pd.DataFrame([ast.literal_eval(row) for row in data["x"]], columns=ATTRIBUTE_NAMES),
-                     "y": pd.DataFrame(data["y"])}
-    else:
-        data_dict = {"x": pd.DataFrame([ast.literal_eval(row) for row in data["x"]], columns=ATTRIBUTE_NAMES),
-                     "y": pd.DataFrame(data["y"]),
-                     "x_cf": pd.DataFrame([ast.literal_eval(row) for row in data["x_cf"]], columns=ATTRIBUTE_NAMES),
-                     "y_cf": pd.DataFrame(data["y_cf"])}
-    return data_dict
-
-
-def main():
-    """
-    # Compute correlations
-    data_set = read_data("x_values.csv", True)
-    data_set = one_hot_to_label(data_set, True)
-    compute_correlations(data_set["x"], "heatmap.png")
-    """
-    # Read the data and convert one-hot encoding to label encoding
-    valid_cf_npa = read_data("cf.csv")
-    valid_cf_npa = one_hot_to_label(valid_cf_npa)
-
-    valid_cf_wr_npa = read_data("cf_wr.csv")
-    valid_cf_wr_npa = one_hot_to_label(valid_cf_wr_npa)
+    # Count changes per groups
+    changes_per_race, _ = count_changes_for_groups(valid_cf_npa, "race", True
+                                                   , filename_changes=CHG_PER_GROUP_FILENAMES[0]
+                                                   , filename_ppl=AMT_PER_GROUP_FILENAMES[0])
+    wr_changes_per_race, _ = count_changes_for_groups(valid_cf_wr_npa, "race", True
+                                                      , filename_changes=CHG_PER_GROUP_FILENAMES[1]
+                                                      , filename_ppl=AMT_PER_GROUP_FILENAMES[1])
+    changes_per_sex, _ = count_changes_for_groups(valid_cf_npa, "sex", True
+                                                  , filename_changes=CHG_PER_GROUP_FILENAMES[2]
+                                                  , filename_ppl=AMT_PER_GROUP_FILENAMES[2])
+    wr_changes_per_sex, _ = count_changes_for_groups(valid_cf_wr_npa, "sex", True
+                                                     , filename_changes=CHG_PER_GROUP_FILENAMES[3]
+                                                     , filename_ppl=AMT_PER_GROUP_FILENAMES[3])
 
     # Compute the histograms (colored by race)
-    trace_names = list(map(lambda a: a[5:], ATTRIBUTE_NAMES[ONE_HOT_VECTOR_START_INDEX:]))
-    chg_per_group1, amt_ppl_in_group1 = plot_histogram(valid_cf_npa, "Integer Linear Programming", "race", trace_names)
-    chg_per_group2, amt_ppl_in_group2 = plot_histogram(valid_cf_wr_npa, "ILP with relaxation", "race", trace_names)
+    race_names = list(map(lambda a: a[5:], ATTRIBUTE_NAMES[ONE_HOT_VECTOR_START_INDEX:]))
+    plot_histogram("Integer Linear Programming", changes_per_race, race_names, COLUMN_NAMES)
+    plot_histogram("ILP with relaxation", wr_changes_per_race, race_names, COLUMN_NAMES)
 
     # Compute the histograms (colored by sex)
-    chg_per_group3, amt_ppl_in_group3 = plot_histogram(valid_cf_npa, "Integer Linear Programming", "sex",
-                                                       ["female", "male"])
-    chg_per_group4, amt_ppl_in_group4 = plot_histogram(valid_cf_wr_npa, "ILP with relaxation", "sex",
-                                                       ["female", "male"])
-
-    # Export the changes per group for further analysis
-    changes_per_groups = [chg_per_group1, chg_per_group2, chg_per_group3, chg_per_group4]
-    for changes, filename in zip(changes_per_groups, CHG_PER_GROUP_FILENAMES):
-        pd.DataFrame(changes, columns=COLUMN_NAMES).to_csv(filename
-                                                           , index=False
-                                                           , sep=";"
-                                                           , quoting=csv.QUOTE_NONE)
-
-    amount_per_group = [amt_ppl_in_group1, amt_ppl_in_group2, amt_ppl_in_group3, amt_ppl_in_group4]
-    for amt, filename in zip(amount_per_group, AMT_PER_GROUP_FILENAMES):
-        pd.DataFrame(amt).to_csv(filename
-                                 , index=False
-                                 , sep=";"
-                                 , quoting=csv.QUOTE_NONE)
+    plot_histogram("Integer Linear Programming", changes_per_sex, ["female", "male"], COLUMN_NAMES)
+    plot_histogram("ILP with relaxation", wr_changes_per_sex, ["female", "male"], COLUMN_NAMES)
 
 
 if __name__ == "__main__":
-    main()
+    create_plots()

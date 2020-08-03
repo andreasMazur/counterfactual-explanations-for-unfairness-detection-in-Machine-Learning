@@ -1,36 +1,15 @@
 import pandas as pd
-from datetime import datetime as dt
-from sklearn import preprocessing
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
 import csv
 import numpy as np
 import cvxpy as cp
 import math
 import sys
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
 
-
-# Constants that will be used throughout this project.
-CSV_FILE = "compas-scores-two-years.csv"
-VECTOR_INDEX = {"age": 0,
-                "priors_count": 1,
-                "days_b_screening_arrest": 2,
-                "is_recid": 3,
-                "two_year_recid": 4,
-                "sex": 5,
-                "charge_degree": 6,
-                "time_in_jail": 7,
-                "race_African-American": 8,
-                "race_Asian": 9,
-                "race_Caucasian": 10,
-                "race_Hispanic": 11,
-                "race_Native American": 12,
-                "race_Other": 13}
-VECTOR_DIMENSION = len(VECTOR_INDEX)
-ATTRIBUTE_NAMES = list(VECTOR_INDEX.keys())
-ONE_HOT_VECTOR_START_INDEX = VECTOR_INDEX["race_African-American"]
-LOWER_BOUNDS = [0, 0, -np.inf, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-UPPER_BOUNDS = [np.inf, np.inf, np.inf, 1, 1, 1, 1, np.inf, 1, 1, 1, 1, 1, 1]
+import test_counterfactual as tc
+from csv_parsing_writing import read_compas_data, store_result
+from test_counterfactual import VECTOR_INDEX, VECTOR_DIMENSION
 
 
 class MetaData:
@@ -59,23 +38,6 @@ class MetaData:
         self.classifier = classifier
 
 
-def store_results(result, sub_dict_to_store, file_name):
-    """
-    Function, that stores the result of the 'process_data'-function.
-
-    :param result: 'dict'
-                   The result-dictionary of the 'process_data'-function
-    :param sub_dict_to_store: 'dict'
-                               The sub-dictionary within 'result', which
-                               shall be stored.
-    :param file_name: 'str'
-                      The filename of the resulting csv-file
-    """
-    pd.DataFrame(result[sub_dict_to_store]).to_csv(f"{file_name}.csv"
-                                                   , index=False, sep=";"
-                                                   , quoting=csv.QUOTE_NONE)
-
-
 def rounding(x, w, b, y, index):
     """
     A function to produce a tree in order to get a correctly
@@ -96,7 +58,7 @@ def rounding(x, w, b, y, index):
     """
     # Base case
     if index == len(x):
-        if int(w @ x + b > 0) == y and one_hot_valid(x):
+        if int(w @ x + b > 0) == y and tc.one_hot_valid(x):
             return x
         else:
             return None
@@ -105,15 +67,15 @@ def rounding(x, w, b, y, index):
     x_copy = x.copy()
     x[index] = math.floor(x[index])
     x_copy[index] = math.ceil(x_copy[index])
-    if in_boundaries(x, [index]) and in_boundaries(x_copy, [index]):
+    if tc.in_boundaries(x, [index]) and tc.in_boundaries(x_copy, [index]):
         result = rounding(x, w, b, y, index + 1)
         if result is None:
             return rounding(x_copy, w, b, y, index + 1)
         else:
             return result
-    elif in_boundaries(x, [index]):
+    elif tc.in_boundaries(x, [index]):
         return rounding(x, w, b, y, index + 1)
-    elif in_boundaries(x_copy, [index]):
+    elif tc.in_boundaries(x_copy, [index]):
         return rounding(x_copy, w, b, y, index + 1)
     else:
         return None
@@ -180,7 +142,7 @@ def compute_cf(meta_data, vector):
     constraints = [q.T @ x_cf + c <= 0]
 
     # Adding constraint for race-attribute
-    ones = np.zeros(VECTOR_DIMENSION)
+    ones = np.zeros(tc.VECTOR_DIMENSION)
     for i in [VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
         , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Other"]]:
         ones[i] = 1
@@ -222,63 +184,6 @@ def compute_cf(meta_data, vector):
         raise ValueError("problem is infeasible")
 
     return x_cf.value, meta_data.classifier.predict(x_cf.value.reshape(1, -1))[0]
-
-
-def one_hot_valid(vec):
-    """
-    Checks if a vector contains a valid one-hot encoding.
-
-    :param vec: 'numpy.ndarray'
-                The vector, for which the included one-hot vector
-                shall be checked.
-    :return: 'bool'
-             The test result.
-    """
-    # Check whether each entry is an integer
-    for i in range(ONE_HOT_VECTOR_START_INDEX, VECTOR_DIMENSION):
-        if not vec[i].is_integer():
-            return False
-
-    # Check whether we only have one 1 in the one-hot encoding
-    if sum(vec[ONE_HOT_VECTOR_START_INDEX:]) != 1.0:
-        return False
-
-    # Return true, if no violation happened.
-    return True
-
-
-def in_boundaries(vec, index):
-    """
-    Checks if the values in a vector are within their bounds.
-
-    :param vec: 'numpy.ndarray'
-                The vector, for which the values shall be checked.
-    :param index: 'range'
-                  The indices for which the boundaries shall be checked
-    :return: 'bool'
-             The test result.
-    """
-    in_range = True
-    for i in index:
-        in_range = in_range and LOWER_BOUNDS[i] <= vec[i] <= UPPER_BOUNDS[i]
-        if not in_range:
-            break
-    return in_range
-
-
-def is_valid(vec, y, y_cf):
-    """
-    Checks if a vectors is plausible or not.
-
-    :param vec: 'numpy.ndarray'
-                 The counterfactual, that shall be tested
-    :param y: 'numpy.int64'
-               The original class of the original vector from vec
-    :param y_cf: 'numpy.int64'
-                 The class of the counterfactual 'vec'
-    :return:
-    """
-    return in_boundaries(vec, range(VECTOR_DIMENSION)) and one_hot_valid(vec) and y != y_cf
 
 
 def process_data(meta_data):
@@ -327,15 +232,14 @@ def process_data(meta_data):
             # CBC (in this case), we have values that are only very close to integers.
             # If we do not round here, we probably will have non-zero entries in rows
             # where we actually should have zero-entries, when we count the changes.
-            # See 'plot_histogram' and 'count_changes' in 'visualization.py' for
-            # further information.
+            # See 'count_changes_for_groups' for further information.
             x_cf = np.round(x_cf)
         if not_rounded:
             result["no_rounding_found"]["x"].append(list(vector))
             result["no_rounding_found"]["y"].append(vector_label)
             result["no_rounding_found"]["x_cf"].append(list(x_cf))
             result["no_rounding_found"]["y_cf"].append(y_cf)
-        elif not is_valid(x_cf, vector_label, y_cf):
+        elif not tc.is_valid(x_cf, vector_label, y_cf):
             result["non_valid_cf"]["x"].append(list(vector))
             result["non_valid_cf"]["y"].append(vector_label)
             result["non_valid_cf"]["x_cf"].append(list(x_cf))
@@ -345,93 +249,15 @@ def process_data(meta_data):
             result["valid_cf"]["y"].append(vector_label)
             result["valid_cf"]["x_cf"].append(list(x_cf))
             result["valid_cf"]["y_cf"].append(y_cf)
-        sys.stdout.write(f"\rThe process is {i / len(data) * 100 :.2f}% complete.")
+        sys.stdout.write(
+            f"\rComputing counterfactuals for experiment: '{meta_data.result_name}'. {i / len(data) * 100 :.2f}% complete.")
         sys.stdout.flush()
     return result
 
 
-def get_data():
-    """
-    Reads the 'compas-scores-two-years.csv'-file from:
-
-    'How We Analyzed the COMPAS Recidivism Algorithm - ProPublica
-    2016 by Jeff Larson, Surya Mattu, Lauren Kirchner and Julia Angwin'
-
-    (Needs to be downloaded from their github-repository:
-     https://github.com/propublica/compas-analysis )
-
-    and filters it with nearly the same conditions as in their analysis.
-
-    After filtering the data-set, it continues with the preprocessing
-    as described in the bachelor thesis.
-
-    :return: 'pandas.core.frame.DataFrame', 'list'
-             The pre-processed data from the data set 'compas-scores-two-years.csv'
-             and a list of labels in the corresponding order to the data set.
-    """
-
-    # raw data
-    recidivism_data_raw = pd.read_csv(CSV_FILE)
-
-    # filter data
-    recidivism_data_filtered = recidivism_data_raw.filter(items=["age"
-        , "c_charge_degree"
-        , "race"
-        , "sex"
-        , "priors_count"
-        , "days_b_screening_arrest"
-        , "decile_score"
-        , "is_recid"
-        , "two_year_recid"
-        , "c_jail_in"
-        , "c_jail_out"])
-    recidivism_data_filtered = recidivism_data_filtered.query("days_b_screening_arrest <= 30"
-                                                              ).query("days_b_screening_arrest >= -30"
-                                                                      ).query("is_recid != -1"
-                                                                              ).query("c_charge_degree != 0")
-
-    # Create response variables
-    label = []
-    for decile_score in recidivism_data_filtered["decile_score"]:
-        label.append(int(decile_score >= 4))
-
-    # Time in jail in hours
-    jail_time = [round(
-        (dt.strptime(jail_out, '%Y-%m-%d %H:%M:%S') - dt.strptime(jail_in, '%Y-%m-%d %H:%M:%S')).total_seconds() / 3600)
-        for jail_in, jail_out in
-        zip(recidivism_data_filtered["c_jail_in"], recidivism_data_filtered["c_jail_out"])]
-
-    # Encode data numerically
-    label_encoder = preprocessing.LabelEncoder()
-    label_encoder.fit(recidivism_data_filtered["c_charge_degree"])
-    recidivism_data_filtered["c_charge_degree"] = label_encoder.transform(recidivism_data_filtered["c_charge_degree"])
-    label_encoder.fit(recidivism_data_filtered["sex"])
-    recidivism_data_filtered["sex"] = label_encoder.transform(recidivism_data_filtered["sex"])
-
-    # numerically encoded data and response variables
-    recidivism_data = recidivism_data_filtered.filter(items=["age"
-        , "priors_count"
-        , "days_b_screening_arrest"
-        , "is_recid"
-        , "two_year_recid"
-        , "race"
-        , "sex"
-        , "c_charge_degree"])
-    recidivism_data["time_in_jail"] = jail_time
-    recidivism_data.index = range(len(recidivism_data))
-    recidivism_data.rename({"c_charge_degree": "charge_degree"}, axis=1, inplace=True)
-
-    # One-hot encoding for the attribute 'race'
-    recidivism_data = pd.get_dummies(recidivism_data)
-
-    return recidivism_data, label
-
-
-def main():
-    ##### PREPROCESSING AND FURTHER PREPARATION #####
-
+def run_experiment():
     # Read the data from 'compas-scores-two-years'
-    recidivism_data, label = get_data()
+    recidivism_data, label = read_compas_data()
 
     # Export filtered data
     pd.DataFrame({"x": recidivism_data.values.tolist(), "y": label}).to_csv("x_values.csv"
@@ -453,15 +279,16 @@ def main():
     meta_data = MetaData(recidivism_data, cp.CBC, "Integer Linear Programming", False, log_reg)
     ILP_npa = process_data(meta_data)
     results.append(ILP_npa)
-    store_results(ILP_npa, "valid_cf", "cf")
+    store_result(ILP_npa, "valid_cf", "cf")
 
     # 2. set of counterfactuals: ILP + relaxation
     meta_data = MetaData(recidivism_data, cp.SCS, "Integer Linear Programming with relaxation", True, log_reg)
     ILP_wr_npa = process_data(meta_data)
     results.append(ILP_wr_npa)
-    store_results(ILP_wr_npa, "valid_cf", "cf_wr")
+    store_result(ILP_wr_npa, "valid_cf", "cf_wr")
 
-    # report the results
+    ##### REPORT RESULTS #####
+
     print("\n")
     print("Computation finished.")
     for res in results:
@@ -480,4 +307,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_experiment()

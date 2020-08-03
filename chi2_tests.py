@@ -1,6 +1,7 @@
 import pandas as pd
-from visualization import AMT_PER_GROUP_FILENAMES, CHG_PER_GROUP_FILENAMES
 from scipy.stats import chi2_contingency
+
+from visualization import CHG_PER_GROUP_FILENAMES, AMT_PER_GROUP_FILENAMES
 
 
 def compute_chi2(table_changes, table_people, group, attribute):
@@ -23,7 +24,7 @@ def compute_chi2(table_changes, table_people, group, attribute):
           , chi2_contingency(contingency_table)[0])
 
 
-def main():
+def compute_chi2_for_groups():
     changes_per_group = []
     # Import changes per group
     for filename in CHG_PER_GROUP_FILENAMES:
@@ -45,6 +46,3 @@ def main():
                 compute_chi2(table_changes, table_people, group, "sex")
         i += 1
         print("\n")
-
-if __name__ == "__main__":
-    main()

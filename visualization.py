@@ -42,6 +42,12 @@ def plot_histogram(plot_title, data, group_names, x_axis):
 
 
 def create_plots():
+    """
+    Function, that visualizes all the results. It initializes the
+    computation for the correlations between the attributes given
+    from the pre-processed data set. Then, it groups the data and
+    plots figures for the groups.
+    """
     # Plot Cramer's V values
     data_set = read_result("x_values.csv", True)
     correlations = compute_correlations(data_set)

@@ -5,6 +5,23 @@ from visualization import CHG_PER_GROUP_FILENAMES, AMT_PER_GROUP_FILENAMES
 
 
 def compute_chi2(table_changes, table_people, group, attribute):
+    """
+    Computes the contingency table based on the given groupings.
+    Furthermore, computes the chi2-values based on the contingency
+    table.
+
+    :param table_changes: 'pandas.core.frame.DataFrame'
+                          The table containing the changes per group
+                          for each attribute.
+    :param table_people: 'pandas.core.frame.DataFrame'
+                          The table containing the amounts of people
+                          per group.
+    :param group: 'int'
+                  The group, for which a chi2-value will be calculated.
+    :param attribute: 'str'
+                       The attribute, for which a chi2-value will be
+                       calculated.
+    """
     # Compute contingency table
     all_people = table_people.sum()[0]
     all_changes = table_changes[attribute].sum()
@@ -25,6 +42,10 @@ def compute_chi2(table_changes, table_people, group, attribute):
 
 
 def compute_chi2_for_groups():
+    """
+    Reads the groupings from 'visualization.py' and initializes
+    computations for chi2-values.
+    """
     changes_per_group = []
     # Import changes per group
     for filename in CHG_PER_GROUP_FILENAMES:

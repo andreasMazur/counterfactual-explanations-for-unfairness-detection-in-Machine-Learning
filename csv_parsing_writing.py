@@ -9,11 +9,22 @@ from sklearn import preprocessing
 COMPAS_FILE = "compas-scores-two-years.csv"
 
 
-def store_amounts(amounts, filename, column_name):
-    pd.DataFrame(amounts, columns=column_name).to_csv(filename
-                                                      , index=False
-                                                      , sep=";"
-                                                      , quoting=csv.QUOTE_NONE)
+def store_amounts(data, filename, column_names):
+    """
+    Stores the amounts of people respectively changes per
+    group.
+
+    :param data: 'list'
+                 The changes or the amounts of people per group.
+    :param filename: 'str'
+                     The filename of the resulting csv-file.
+    :param column_names: 'list'
+                         The names of the columns.
+    """
+    pd.DataFrame(data, columns=column_names).to_csv(filename
+                                                   , index=False
+                                                   , sep=";"
+                                                   , quoting=csv.QUOTE_NONE)
 
 
 def store_result(result, sub_dict_to_store, file_name):

@@ -256,6 +256,11 @@ def process_data(meta_data):
 
 
 def run_experiment():
+    """
+    Initializes the pre-processing of the data and the computation
+    of the counterfactuals. Furthermore, it prints the result of the
+    counterfactual-computation process.
+    """
     # Read the data from 'compas-scores-two-years'
     recidivism_data, label = read_compas_data()
 

@@ -4,6 +4,9 @@ from chi2_tests import compute_chi2_for_groups
 
 
 def main():
+    """
+    Runs the entire experiment.
+    """
     # Run the experiment
     run_experiment()
 

@@ -23,14 +23,25 @@ installed:
 - seaborn: https://github.com/mwaskom/seaborn
 - plotly: https://github.com/plotly/plotly.py
 
+All the packages and their used version are listed in the requirements.txt.
 Furthermore, the project is based on the '_compas-scores-two-years.csv_'
 data set from: https://github.com/propublica/compas-analysis .
 You will have to download it from there.
 
-### What is the code doing?
+### How can I use the code?
 
-The code pre-processes the data from '_compas-scores-two-years.csv_', such that
-we can train a logistic regression with that data. Then, we compute counterfactual
-explanations for the pre-processed vectors by solving a constrained optimization
-problem. The counterfactuals will be stored within csv-files in the same directiory
-as the code-files. In the end, you can visualize the results with the '_visualiztaion.py_'-file.
+In general, the code is executed in three steps:
+
+- compute the counterfactuals
+- group and visualize the data
+- compute the chi2-values for the groups and certain attributes
+
+If you want to execute the entire project, you can execute the '_execute_experiment.py_'-file.
+If you only want to compute a certain step, you execute either:
+
+- _compute_cfs.py_
+- _visualization.py_
+- _chi2_tests.py_
+
+However, keep in mind that _visualization.py_ requires the results of _compute_cfs.py_ and
+_chi2_tests.py_ requires the groupings from _visualization.py_.

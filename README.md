@@ -28,7 +28,7 @@ Furthermore, the project is based on the '_compas-scores-two-years.csv_'
 data set from: https://github.com/propublica/compas-analysis .
 You will have to download it from there.
 
-### How can I use the code?
+### How can I execute the code?
 
 In general, the code is executed in three steps:
 

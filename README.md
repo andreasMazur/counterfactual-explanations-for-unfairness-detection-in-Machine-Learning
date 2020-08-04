@@ -23,7 +23,7 @@ installed:
 - seaborn: https://github.com/mwaskom/seaborn
 - plotly: https://github.com/plotly/plotly.py
 
-All the packages and their used version are listed in the requirements.txt.
+All the packages and their used version are listed in the **requirements.txt**.
 Furthermore, the project is based on the '_compas-scores-two-years.csv_'
 data set from: https://github.com/propublica/compas-analysis .
 You will have to download it from there.

@@ -43,5 +43,5 @@ If you only want to compute a certain step, you execute either:
 - _visualization.py_
 - _chi2_tests.py_
 
-However, keep in mind that _visualization.py_ requires the results of _compute_cfs.py_ and
-_chi2_tests.py_ requires the groupings from _visualization.py_.
+However, keep in mind that '_visualization.py_' requires the results of '_compute_cfs.py_' and
+'_chi2_tests.py_' requires the groupings from '_visualization.py_'.

@@ -9,7 +9,7 @@ Learning models.
 
 ### Necessities
 
-First, one needs to install Python 3.7.5.
+First, one needs to install a Python version >=3.6.
 
 Then, in order to run the code, you need to have following libararies
 installed:

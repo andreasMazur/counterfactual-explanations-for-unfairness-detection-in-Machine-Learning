@@ -10,7 +10,7 @@ def main():
     # Plot figures
     create_plots()
 
-    # Compute chi2-test statistic
+    # Compute chi2-test statistics
     compute_chi2_for_groups()
 
 

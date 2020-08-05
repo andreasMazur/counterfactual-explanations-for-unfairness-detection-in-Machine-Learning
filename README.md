@@ -9,24 +9,25 @@ Learning models.
 
 ### Necessities
 
-First, one needs to install a Python version >=3.6.
+The experiment was executed with Python version >=3.6.
 
-Then, in order to run the code, you need to have following libararies
-installed:
+In order to run the code, you need to set up a conda environment and
+install the packages from the **requirements.txt**. This is because
+you cannot install the '_plotly-orca_'-package with pip. If you have no
+conda installed, you have the option to run the project with
+a normal pip-environment. If so, you only need to install the
+packages from the **requirements.txt** until line 9. However, this
+comes with the drawback that you cannot save the histograms as
+svg-figures. 
 
-- cvxpy: https://github.com/cvxgrp/cvxpy
-- sklearn: https://github.com/scikit-learn/scikit-learn
-- pandas: https://github.com/pandas-dev/pandas
-- numpy: https://github.com/numpy/numpy
-- scipy: https://github.com/scipy/scipy
-- matplotlib: https://github.com/matplotlib/matplotlib
-- seaborn: https://github.com/mwaskom/seaborn
-- plotly: https://github.com/plotly/plotly.py
-
-All the packages and their used version are listed in the **requirements.txt**.
-Furthermore, the project is based on the '_compas-scores-two-years.csv_'
+The project is based on the '_compas-scores-two-years.csv_'
 data set from: https://github.com/propublica/compas-analysis .
 You will have to download it from there.
+
+Furthermore, you need to have the following solvers installed:
+
+- https://github.com/cvxgrp/scs (SCS)
+- https://github.com/coin-or/Cbc (CBC)
 
 ### How can I execute the code?
 

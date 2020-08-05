@@ -13,7 +13,8 @@ The experiment was executed with Python version >=3.6.
 
 In order to run the code, you need to set up a conda environment and
 install the packages from the **requirements.txt**. This is because
-you cannot install the '_plotly-orca_'-package with pip. If you have no
+you cannot install the '_plotly-orca_'-package with pip. You need to 
+install the package with the conda package manager. If you have no
 conda installed, you have the option to run the project with
 a normal pip-environment. If so, you only need to install the
 packages from the **requirements.txt** until line 9. However, this

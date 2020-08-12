@@ -81,7 +81,7 @@ def count_changes(delta_vectors):
     return changes_per_attribute.tolist()
 
 
-def count_changes_for_groups(data, grouping_attribute, save_as_csv=False, filename_changes="Changes.csv",
+def count_changes_for_groups(data, grouping_attribute, groups, save_as_csv=False, filename_changes="Changes.csv",
                              filename_ppl="People.csv"):
     """
     Groups the entries in 'data_label_encoding' by 'groupin_attribute' and counts the
@@ -93,6 +93,9 @@ def count_changes_for_groups(data, grouping_attribute, save_as_csv=False, filena
                  Usually just imported via 'read_data'-function.
     :param grouping_attribute: 'str'
                                The attribute after which the people are grouped.
+    :param groups: 'list'
+                    Consists of tuples, that contain an index, that shows to which
+                    group the condition, from the second entry in the tuple, belongs.
     :param save_as_csv: 'bool'
                         Tells if the groupings shall be saved in csv-files.
     :param filename_changes: 'str'
@@ -114,17 +117,25 @@ def count_changes_for_groups(data, grouping_attribute, save_as_csv=False, filena
     delta_vectors[f"{grouping_attribute}_old"] = remember
 
     # Sort by attribute "to_color_old"
-    amount_of_groups = len(delta_vectors.groupby(f"{grouping_attribute}_old").count().index)
-    delta_vectors_by_to_color = [[] for _ in range(amount_of_groups)]
+    grouped_delta_vectors = [[] for _ in range(len(groups))]
+    sorted_out_list = []
     for _, row in delta_vectors.iterrows():
-        delta_vectors_by_to_color[int(row[f"{grouping_attribute}_old"])].append(list(row)[:len(row) - 1])
+        sorted_out = True
+        for index, group_condition in groups:
+            if group_condition(row[f"{grouping_attribute}_old"]):
+                # Remove the grouping_attribute_old-entry. From here on, it is no longer needed.
+                grouped_delta_vectors[index].append(list(row)[:len(row) - 1])
+                sorted_out = False
+                break
+        if sorted_out:
+            sorted_out_list.append(list(row)[:len(row) - 1])
 
     amount_ppl_in_group = []
-    for i in range(len(delta_vectors_by_to_color)):
-        amount_ppl_in_group.append(len(delta_vectors_by_to_color[i]))
+    for i in range(len(grouped_delta_vectors)):
+        amount_ppl_in_group.append(len(grouped_delta_vectors[i]))
 
     # Count the changes
-    changes_per_attribute = count_changes(delta_vectors_by_to_color)
+    changes_per_attribute = count_changes(grouped_delta_vectors)
 
     if save_as_csv:
         # Export the changes per group for further analysis

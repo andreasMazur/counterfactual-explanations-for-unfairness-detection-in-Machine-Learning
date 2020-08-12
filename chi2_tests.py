@@ -62,8 +62,14 @@ def compute_chi2_for_groups():
         if i < 2:
             for group in range(len(table_people)):
                 compute_chi2(table_changes, table_people, group, "race")
-        else:
+        elif 2 <= i < 4:
             for group in range(len(table_people)):
                 compute_chi2(table_changes, table_people, group, "sex")
+        else:
+            for group in range(len(table_people)):
+                compute_chi2(table_changes, table_people, group, "age")
         i += 1
         print("\n")
+
+if __name__ == "__main__":
+    compute_chi2_for_groups()

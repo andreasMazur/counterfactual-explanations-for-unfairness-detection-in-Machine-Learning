@@ -7,11 +7,12 @@ from test_counterfactual import ATTRIBUTE_NAMES, ONE_HOT_VECTOR_START_INDEX
 from cramers_v import compute_correlations
 from grouping_and_counting import count_changes_for_groups, one_hot_to_label, COLUMN_NAMES
 
-
 CHG_PER_GROUP_FILENAMES = ["changes_per_race.csv", "wr_changes_per_race.csv"
-    , "changes_per_sex.csv", "wr_changes_per_sex.csv"]
+    , "changes_per_sex.csv", "wr_changes_per_sex.csv"
+    , "changes_per_age.csv", "wr_changes_per_age.csv"]
 AMT_PER_GROUP_FILENAMES = ["ppl_per_race.csv", "wr_ppl_per_race.csv"
-    , "ppl_per_sex.csv", "wr_ppl_per_sex.csv"]
+    , "ppl_per_sex.csv", "wr_ppl_per_sex.csv"
+    , "ppl_per_age.csv", "wr_ppl_per_age.csv"]
 
 
 def plot_histogram(plot_title, data, group_names, x_axis, filename, store_plots=True):
@@ -64,7 +65,7 @@ def create_plots():
     dont_stop = True
     save_pictures = False
     while dont_stop:
-        plotly_orca = input("Do you want to store the figures? (needs plotly-orca package) (y/n):")
+        plotly_orca = input("Do you want to store the figures? (requires plotly-orca package) (y/n):")
         if plotly_orca == "y":
             save_pictures = True
             dont_stop = False
@@ -96,27 +97,52 @@ def create_plots():
     one_hot_to_label(valid_cf_wr_npa)
 
     # Count changes per groups
-    changes_per_race, _ = count_changes_for_groups(valid_cf_npa, "race", True
+    grouping_conditions_race = [(0, lambda p: p == 0), (1, lambda p: p == 1), (2, lambda p: p == 2),
+                                (3, lambda p: p == 3), (4, lambda p: p == 4), (5, lambda p: p == 5)]
+    changes_per_race, _ = count_changes_for_groups(valid_cf_npa, "race", grouping_conditions_race, True
                                                    , filename_changes=CHG_PER_GROUP_FILENAMES[0]
                                                    , filename_ppl=AMT_PER_GROUP_FILENAMES[0])
-    wr_changes_per_race, _ = count_changes_for_groups(valid_cf_wr_npa, "race", True
+    wr_changes_per_race, _ = count_changes_for_groups(valid_cf_wr_npa, "race", grouping_conditions_race, True
                                                       , filename_changes=CHG_PER_GROUP_FILENAMES[1]
                                                       , filename_ppl=AMT_PER_GROUP_FILENAMES[1])
-    changes_per_sex, _ = count_changes_for_groups(valid_cf_npa, "sex", True
+
+    grouping_conditions_sex = [(0, lambda p: p == 0), (1, lambda p: p == 1)]
+    changes_per_sex, _ = count_changes_for_groups(valid_cf_npa, "sex", grouping_conditions_sex, True
                                                   , filename_changes=CHG_PER_GROUP_FILENAMES[2]
                                                   , filename_ppl=AMT_PER_GROUP_FILENAMES[2])
-    wr_changes_per_sex, _ = count_changes_for_groups(valid_cf_wr_npa, "sex", True
+    wr_changes_per_sex, _ = count_changes_for_groups(valid_cf_wr_npa, "sex", grouping_conditions_sex, True
                                                      , filename_changes=CHG_PER_GROUP_FILENAMES[3]
                                                      , filename_ppl=AMT_PER_GROUP_FILENAMES[3])
+
+    grouping_conditions_age = [(0, lambda p: p <= 25), (1, lambda p: p > 25)]
+    changes_per_age, _ = count_changes_for_groups(valid_cf_npa, "age", grouping_conditions_age, True
+                                                  , filename_changes=CHG_PER_GROUP_FILENAMES[4]
+                                                  , filename_ppl=AMT_PER_GROUP_FILENAMES[4])
+    wr_changes_per_age, _ = count_changes_for_groups(valid_cf_wr_npa, "age", grouping_conditions_age, True
+                                                     , filename_changes=CHG_PER_GROUP_FILENAMES[5]
+                                                     , filename_ppl=AMT_PER_GROUP_FILENAMES[5])
 
     # Compute the histograms (colored by race)
     race_names = list(map(lambda a: a[5:], ATTRIBUTE_NAMES[ONE_HOT_VECTOR_START_INDEX:]))
     plot_histogram("Integer Linear Programming", changes_per_race, race_names, COLUMN_NAMES, "cf", save_pictures)
-    plot_histogram("ILP with relaxation", wr_changes_per_race, race_names, COLUMN_NAMES, "cf_wr", save_pictures)
+    plot_histogram("Integer Linear Programming with Relaxation", wr_changes_per_race, race_names, COLUMN_NAMES, "cf_wr",
+                   save_pictures)
 
     # Compute the histograms (colored by sex)
-    plot_histogram("Integer Linear Programming", changes_per_sex, ["female", "male"], COLUMN_NAMES, "cf_red_blue", save_pictures)
-    plot_histogram("ILP with relaxation", wr_changes_per_sex, ["female", "male"], COLUMN_NAMES, "cf_wr_red_blue", save_pictures)
+    plot_histogram("Integer Linear Programming", changes_per_sex, ["female", "male"], COLUMN_NAMES, "cf_red_blue_sex",
+                   save_pictures)
+    plot_histogram("Integer Linear Programming with Relaxation", wr_changes_per_sex, ["female", "male"], COLUMN_NAMES,
+                   "cf_wr_red_blue_sex",
+                   save_pictures)
+
+    # Compute the histograms (colored by age)
+    plot_histogram("Integer Linear Programming", changes_per_age, ["under the age of 26", "older than age of 25"],
+                   COLUMN_NAMES, "cf_red_blue_age",
+                   save_pictures)
+    plot_histogram("Integer Linear Programming with Relaxation", wr_changes_per_age,
+                   ["under the age of 26", "older than age of 25"],
+                   COLUMN_NAMES, "cf_wr_red_blue_age",
+                   save_pictures)
 
 
 if __name__ == "__main__":

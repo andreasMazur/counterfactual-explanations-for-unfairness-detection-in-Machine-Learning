@@ -4,7 +4,6 @@ import ast
 from test_counterfactual import ATTRIBUTE_NAMES
 from datetime import datetime as dt
 from sklearn import preprocessing
-import numpy as np
 
 # The csv-file containing the compas-data
 COMPAS_FILE = "compas-scores-two-years.csv"

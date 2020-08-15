@@ -41,23 +41,10 @@ def plot_histogram(plot_title, data, group_names, x_axis, filename, store_plots=
     if len(data) != len(group_names):
         raise Exception("Unequal amount of group names and groups.")
 
-    # Check if we have more than one group
-    amount_groups = 0
-    index = 0
-    for i, group in enumerate(data):
-        if not all(changes == 0 for changes in group):
-            index = i
-            amount_groups += 1
-
     fig = go.Figure()
-    # If there is only one group, leave the trace-names away
-    if amount_groups == 1:
-        fig.add_trace(go.Bar(x=x_axis, y=data[index]))
-        fig.update_layout(title_text=plot_title)
-    else:
-        for i in range(len(data)):
-            fig.add_trace(go.Bar(x=x_axis, y=data[i], name=group_names[i]))
-        fig.update_layout(barmode='relative', title_text=plot_title)
+    for i in range(len(data)):
+        fig.add_trace(go.Bar(x=x_axis, y=data[i], name=group_names[i]))
+    fig.update_layout(barmode='relative', title_text=plot_title)
 
     # Decide to store or simply show the plots
     if store_plots:

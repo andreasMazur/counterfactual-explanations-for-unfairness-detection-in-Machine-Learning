@@ -45,15 +45,19 @@ def bias_corrected_cramers_V(attribute1, attribute2):
         return 0
 
 
-def compute_correlations(data):
+def compute_correlations(data, concealed_sens_attr=False):
     """
     Creates heatmap with Cramér's V values for every attribute-pair.
 
+    :param concealed_sens_attr: 'bool'
+                                 Tells if sensitive attributes have been
+                                 concealed.
     :param data: 'pandas.core.frame.DataFrame'
                   The original x-vectors for the counterfactuals.
     """
     # Convert one-hot-encoding to label-encoding
-    data = one_hot_to_label(data, True)
+    if not concealed_sens_attr:
+        data = one_hot_to_label(data, True)
 
     # Get x-values from result-dictionary
     data = data["x"]

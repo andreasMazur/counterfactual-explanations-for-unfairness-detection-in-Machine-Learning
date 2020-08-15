@@ -1,6 +1,6 @@
 import numpy as np
 
-# The structure of a counterfactual
+# The structure of a counterfactual, when the sensitive attributes aren't concealed.
 VECTOR_INDEX = {"age": 0,
                 "priors_count": 1,
                 "days_b_screening_arrest": 2,
@@ -20,6 +20,7 @@ ATTRIBUTE_NAMES = list(VECTOR_INDEX.keys())
 ONE_HOT_VECTOR_START_INDEX = VECTOR_INDEX["race_African-American"]
 LOWER_BOUNDS = [0, 0, -np.inf, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 UPPER_BOUNDS = [np.inf, np.inf, np.inf, 1, 1, 1, 1, np.inf, 1, 1, 1, 1, 1, 1]
+VECTOR_DIMENSION_CONCEALED = 9
 
 
 def one_hot_valid(vec):
@@ -64,10 +65,11 @@ def in_boundaries(vec, index):
     return in_range
 
 
-def is_valid(vec, y, y_cf):
+def is_valid(vec, y, y_cf, concealed_sens_attr):
     """
     Checks if a vectors is plausible or not.
 
+    :param concealed_sens_attr:
     :param vec: 'numpy.ndarray'
                  The counterfactual, that shall be tested
     :param y: 'numpy.int64'
@@ -76,4 +78,7 @@ def is_valid(vec, y, y_cf):
                  The class of the counterfactual 'vec'
     :return:
     """
-    return in_boundaries(vec, range(VECTOR_DIMENSION)) and one_hot_valid(vec) and y != y_cf
+    if concealed_sens_attr:
+        return in_boundaries(vec, range(VECTOR_DIMENSION_CONCEALED)) and y != y_cf
+    else:
+        return in_boundaries(vec, range(VECTOR_DIMENSION)) and one_hot_valid(vec) and y != y_cf

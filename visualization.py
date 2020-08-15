@@ -3,7 +3,7 @@ import seaborn as sns
 from csv_parsing_writing import read_result
 from matplotlib import pyplot as plt
 
-from test_counterfactual import ATTRIBUTE_NAMES, ONE_HOT_VECTOR_START_INDEX
+from test_counterfactual import ATTRIBUTE_NAMES, ONE_HOT_VECTOR_START_INDEX, VECTOR_DIMENSION
 from cramers_v import compute_correlations
 from grouping_and_counting import count_changes_for_groups, one_hot_to_label, COLUMN_NAMES
 
@@ -74,9 +74,12 @@ def create_plots():
     plots figures for the groups.
     """
 
+    # Import x-values and check if sensitive attributes are concealed
+
+    data_set, concealed_data = read_result("x_values.csv", True)
+
     # Plot Cramer's V values
-    data_set = read_result("x_values.csv", True)
-    correlations = compute_correlations(data_set)
+    correlations = compute_correlations(data_set, concealed_data)
     fig, ax = plt.subplots(figsize=(10, 5))
     sns.heatmap(correlations, annot=True
                 , cmap=plt.cm.Reds
@@ -89,12 +92,13 @@ def create_plots():
     plt.show()
 
     # Read the experiment results
-    valid_cf_npa = read_result("cf.csv")
-    valid_cf_wr_npa = read_result("cf_wr.csv")
+    valid_cf_npa, _ = read_result("cf.csv")
+    valid_cf_wr_npa, _ = read_result("cf_wr.csv")
 
     # Convert One-Hot columns to label-encoding
-    one_hot_to_label(valid_cf_npa)
-    one_hot_to_label(valid_cf_wr_npa)
+    if not concealed_data:
+        one_hot_to_label(valid_cf_npa)
+        one_hot_to_label(valid_cf_wr_npa)
 
     # Count changes per groups
     grouping_conditions_race = [(0, lambda p: p == 0), (1, lambda p: p == 1), (2, lambda p: p == 2),

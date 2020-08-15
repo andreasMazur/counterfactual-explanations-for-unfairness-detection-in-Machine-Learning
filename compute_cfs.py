@@ -9,7 +9,7 @@ from sklearn.linear_model import LogisticRegression
 
 import test_counterfactual as tc
 from csv_parsing_writing import read_compas_data, store_result
-from test_counterfactual import VECTOR_INDEX, VECTOR_DIMENSION
+from test_counterfactual import VECTOR_INDEX, VECTOR_DIMENSION, VECTOR_DIMENSION_CONCEALED
 
 
 class MetaData:
@@ -18,7 +18,7 @@ class MetaData:
     multiple points in the computing process.
     """
 
-    def __init__(self, data, solver, result_name, relaxation, classifier):
+    def __init__(self, data, solver, result_name, relaxation, classifier, concealed_sens_attributes):
         """
         :param data: 'pandas.core.frame.DataFrame'
                      The pre-processed vectors from the database
@@ -36,13 +36,17 @@ class MetaData:
         self.result_name = result_name
         self.relaxation = relaxation
         self.classifier = classifier
+        self.concealed_sens_attributes = concealed_sens_attributes
 
 
-def rounding(x, w, b, y, index):
+def rounding(x, w, b, y, index, concealed_sens_attr):
     """
     A function to produce a tree in order to get a correctly
     rounded integer vector with respect to its class.
 
+    :param concealed_sens_attr: 'bool'
+                                Tells if concealed sensitive attributes
+                                were used.
     :param x: 'numpy.ndarray'
               The counterfactual that shall be rounded
     :param w: 'numpy.ndarray'
@@ -56,9 +60,16 @@ def rounding(x, w, b, y, index):
     :return: 'numpy.ndarray'
              A counterfactual with only integer entries.
     """
+    # If we have concealed sensitive attributes, we don't use one-hot encoding.
+    # Hence, we don't the validity of the one-hot vector.
+    if concealed_sens_attr:
+        check_result = lambda rounded_vector: int(w @ rounded_vector + b > 0) == y
+    else:
+        check_result = lambda rounded_vector: int(w @ rounded_vector + b > 0) == y and tc.one_hot_valid(rounded_vector)
+
     # Base case
     if index == len(x):
-        if int(w @ x + b > 0) == y and tc.one_hot_valid(x):
+        if check_result(x):
             return x
         else:
             return None
@@ -68,15 +79,15 @@ def rounding(x, w, b, y, index):
     x[index] = math.floor(x[index])
     x_copy[index] = math.ceil(x_copy[index])
     if tc.in_boundaries(x, [index]) and tc.in_boundaries(x_copy, [index]):
-        result = rounding(x, w, b, y, index + 1)
+        result = rounding(x, w, b, y, index + 1, concealed_sens_attr)
         if result is None:
-            return rounding(x_copy, w, b, y, index + 1)
+            return rounding(x_copy, w, b, y, index + 1, concealed_sens_attr)
         else:
             return result
     elif tc.in_boundaries(x, [index]):
-        return rounding(x, w, b, y, index + 1)
+        return rounding(x, w, b, y, index + 1, concealed_sens_attr)
     elif tc.in_boundaries(x_copy, [index]):
-        return rounding(x_copy, w, b, y, index + 1)
+        return rounding(x_copy, w, b, y, index + 1, concealed_sens_attr)
     else:
         return None
 
@@ -141,40 +152,59 @@ def compute_cf(meta_data, vector):
     # strict inequalities are not allowed
     constraints = [q.T @ x_cf + c <= 0]
 
-    # Adding constraint for race-attribute
-    ones = np.zeros(tc.VECTOR_DIMENSION)
-    for i in [VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
-        , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Other"]]:
-        ones[i] = 1
-    constraints += [ones.T @ x_cf == 1]
+    # Adding constraint for race-attribute (if not concealed)
+    if not meta_data.concealed_sens_attributes:
+        ones = np.zeros(tc.VECTOR_DIMENSION)
+        for i in [VECTOR_INDEX["race_African-American"], VECTOR_INDEX["race_Asian"]
+            , VECTOR_INDEX["race_Caucasian"], VECTOR_INDEX["race_Hispanic"]
+            , VECTOR_INDEX["race_Native American"], VECTOR_INDEX["race_Other"]]:
+            ones[i] = 1
+        constraints += [ones.T @ x_cf == 1]
+
+    if meta_data.concealed_sens_attributes:
+        vector_dim = VECTOR_DIMENSION_CONCEALED
+    else:
+        vector_dim = VECTOR_DIMENSION
 
     # lower bounds
-    lower_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
-    for i in [VECTOR_INDEX["age"], VECTOR_INDEX["priors_count"]
-        , VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
-        , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
-        , VECTOR_INDEX["time_in_jail"], VECTOR_INDEX["race_African-American"]
-        , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
-        , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
-        , VECTOR_INDEX["race_Other"]]:
+    if meta_data.concealed_sens_attributes:
+        lower_bound_indices = [VECTOR_INDEX["age"], VECTOR_INDEX["priors_count"]
+            , VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
+            , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
+            , VECTOR_INDEX["time_in_jail"], 8]
+    else:
+        lower_bound_indices = [VECTOR_INDEX["age"], VECTOR_INDEX["priors_count"]
+            , VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
+            , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
+            , VECTOR_INDEX["time_in_jail"], VECTOR_INDEX["race_African-American"]
+            , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
+            , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
+            , VECTOR_INDEX["race_Other"]]
+    lower_bounds = np.zeros((vector_dim, vector_dim))
+    for i in lower_bound_indices:
         lower_bounds[i, i] = 1
 
     constraints += [-(lower_bounds @ x_cf) <= 0]
 
     # upper bounds
-    upper_bounds = np.zeros((VECTOR_DIMENSION, VECTOR_DIMENSION))
-    upper_bounds_indices = [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
-        , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
-        , VECTOR_INDEX["race_African-American"]
-        , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
-        , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
-        , VECTOR_INDEX["race_Other"]]
+    if meta_data.concealed_sens_attributes:
+        upper_bounds_indices = [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
+            , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"], 8]
+    else:
+        upper_bounds_indices = [VECTOR_INDEX["is_recid"], VECTOR_INDEX["two_year_recid"]
+            , VECTOR_INDEX["sex"], VECTOR_INDEX["charge_degree"]
+            , VECTOR_INDEX["race_African-American"]
+            , VECTOR_INDEX["race_Asian"], VECTOR_INDEX["race_Caucasian"]
+            , VECTOR_INDEX["race_Hispanic"], VECTOR_INDEX["race_Native American"]
+            , VECTOR_INDEX["race_Other"]]
+    upper_bounds = np.zeros((vector_dim, vector_dim))
     for i in upper_bounds_indices:
         upper_bounds[i, i] = 1
 
-    ub_vector = np.zeros(VECTOR_DIMENSION)
+    ub_vector = np.zeros(vector_dim)
     for i in upper_bounds_indices:
         ub_vector[i] = 1
+
     constraints += [upper_bounds @ (x_cf - ub_vector) <= 0]
 
     # Solve the problem
@@ -225,7 +255,7 @@ def process_data(meta_data):
         not_rounded = False
         if meta_data.relaxation:
             x_cf = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
-                            , 1 - vector_label, 0)
+                            , 1 - vector_label, 0, meta_data.concealed_sens_attributes)
             if x_cf is None:
                 x_cf, y_cf = compute_cf(meta_data, vector)
                 not_rounded = True
@@ -243,7 +273,7 @@ def process_data(meta_data):
             result["no_rounding_found"]["y"].append(vector_label)
             result["no_rounding_found"]["x_cf"].append(list(x_cf))
             result["no_rounding_found"]["y_cf"].append(y_cf)
-        elif not tc.is_valid(x_cf, vector_label, y_cf):
+        elif not tc.is_valid(x_cf, vector_label, y_cf, meta_data.concealed_sens_attributes):
             result["non_valid_cf"]["x"].append(list(vector))
             result["non_valid_cf"]["y"].append(vector_label)
             result["non_valid_cf"]["x_cf"].append(list(x_cf))
@@ -259,14 +289,14 @@ def process_data(meta_data):
     return result
 
 
-def run_experiment():
+def run_experiment(conceal_sens_attr=False):
     """
     Initializes the pre-processing of the data and the computation
     of the counterfactuals. Furthermore, it prints the result of the
     counterfactual-computation process.
     """
     # Read the data from 'compas-scores-two-years'
-    recidivism_data, label = read_compas_data()
+    recidivism_data, label = read_compas_data(conceal_sens_attr)
 
     # Export filtered data
     pd.DataFrame({"x": recidivism_data.values.tolist(), "y": label}).to_csv("x_values.csv"
@@ -285,13 +315,14 @@ def run_experiment():
     ##### COMPUTING COUNTERFACTUALS #####
 
     # 1. set of counterfactuals: ILP
-    meta_data = MetaData(recidivism_data, cp.CBC, "Integer Linear Programming", False, log_reg)
+    meta_data = MetaData(recidivism_data, cp.CBC, "Integer Linear Programming", False, log_reg, conceal_sens_attr)
     ILP_npa = process_data(meta_data)
     results.append(ILP_npa)
     store_result(ILP_npa, "valid_cf", "cf")
 
     # 2. set of counterfactuals: ILP + relaxation
-    meta_data = MetaData(recidivism_data, cp.SCS, "Integer Linear Programming with relaxation", True, log_reg)
+    meta_data = MetaData(recidivism_data, cp.SCS, "Integer Linear Programming with relaxation", True, log_reg,
+                         conceal_sens_attr)
     ILP_wr_npa = process_data(meta_data)
     results.append(ILP_wr_npa)
     store_result(ILP_wr_npa, "valid_cf", "cf_wr")

@@ -1,10 +1,11 @@
 import pandas as pd
 import csv
 import ast
-from test_counterfactual import ATTRIBUTE_NAMES
 from datetime import datetime as dt
 from sklearn import preprocessing
 import numpy as np
+
+from test_counterfactual import ATTRIBUTE_NAMES, VECTOR_DIMENSION, ONE_HOT_VECTOR_START_INDEX
 
 # The csv-file containing the compas-data
 COMPAS_FILE = "compas-scores-two-years.csv"
@@ -58,22 +59,29 @@ def read_result(file_name, skip_cf=False):
                     If it does, just let the value be 'False'. Otherwise, tell
                     to skip the counterfactuals by stating it to be 'True'.
     :return: 'dict'
-             A dictionary containing a result of the 'compute_cfs' program.
+             A dictionary containing from test_counterfactual import ATTRIBUTE_NAMESa result of the 'compute_cfs' program.
     """
-
     data = pd.read_csv(file_name, sep=";")
+    concealed_data = False
+    if np.array(ast.literal_eval(data["x"][0])).shape[0] < VECTOR_DIMENSION:
+        column_names = ATTRIBUTE_NAMES[:ONE_HOT_VECTOR_START_INDEX]
+        column_names.append("race")
+        concealed_data = True
+    else:
+        column_names = ATTRIBUTE_NAMES
+
     if skip_cf:
-        data_dict = {"x": pd.DataFrame([ast.literal_eval(row) for row in data["x"]], columns=ATTRIBUTE_NAMES),
+        data_dict = {"x": pd.DataFrame([ast.literal_eval(row) for row in data["x"]], columns=column_names),
                      "y": pd.DataFrame(data["y"])}
     else:
-        data_dict = {"x": pd.DataFrame([ast.literal_eval(row) for row in data["x"]], columns=ATTRIBUTE_NAMES),
+        data_dict = {"x": pd.DataFrame([ast.literal_eval(row) for row in data["x"]], columns=column_names),
                      "y": pd.DataFrame(data["y"]),
-                     "x_cf": pd.DataFrame([ast.literal_eval(row) for row in data["x_cf"]], columns=ATTRIBUTE_NAMES),
+                     "x_cf": pd.DataFrame([ast.literal_eval(row) for row in data["x_cf"]], columns=column_names),
                      "y_cf": pd.DataFrame(data["y_cf"])}
-    return data_dict
+    return data_dict, concealed_data
 
 
-def read_compas_data(remove_sens_attr=False):
+def read_compas_data(conceal_sens_attr=False):
     """
     Reads the 'compas-scores-two-years.csv'-file from:
 
@@ -88,6 +96,9 @@ def read_compas_data(remove_sens_attr=False):
     After filtering the data-set, it continues with the preprocessing
     as described in the bachelor thesis.
 
+    :param conceal_sens_attr: 'bool'
+                               Tells if sensitive attributes shall be
+                               concealed for the experiment.
     :return: 'pandas.core.frame.DataFrame', 'list'
              The pre-processed data from the data set 'compas-scores-two-years.csv'
              and a list of labels in the corresponding order to the data set.
@@ -144,19 +155,17 @@ def read_compas_data(remove_sens_attr=False):
     recidivism_data.index = range(len(recidivism_data))
     recidivism_data.rename({"c_charge_degree": "charge_degree"}, axis=1, inplace=True)
 
-    # One-hot encoding for the attribute 'race'
-    recidivism_data = pd.get_dummies(recidivism_data)
-
-    # Remove information about sensitive attributes
-    if remove_sens_attr:
-        recidivism_data.loc[:, "sex"] = 0
-        recidivism_data.loc[:, "age"] = 0
-        recidivism_data["race_African-American"] = np.ones(recidivism_data.shape[0])
-        recidivism_data["race_Asian"] = np.zeros(recidivism_data.shape[0])
-        recidivism_data["race_Caucasian"] = np.zeros(recidivism_data.shape[0])
-        recidivism_data["race_Hispanic"] = np.zeros(recidivism_data.shape[0])
-        recidivism_data["race_Native American"] = np.zeros(recidivism_data.shape[0])
-        recidivism_data["race_Other"] = np.zeros(recidivism_data.shape[0])
+    # If we choose to conceal the sensitive attributes,
+    # we don't use one-hot encoding.
+    if conceal_sens_attr:
+        # Remove information about sensitive attributes
+        recidivism_data.drop(["race"], axis=1, inplace=True)
+        recidivism_data["age"] = np.zeros(recidivism_data.shape[0])
+        recidivism_data["sex"] = np.zeros(recidivism_data.shape[0])
+        recidivism_data["race"] = np.zeros(recidivism_data.shape[0])
+    else:
+        # One-hot encoding for the attribute 'race'
+        recidivism_data = pd.get_dummies(recidivism_data)
 
     print(recidivism_data.info())
     return recidivism_data, label

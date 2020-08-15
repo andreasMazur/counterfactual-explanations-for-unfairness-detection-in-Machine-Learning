@@ -118,17 +118,12 @@ def count_changes_for_groups(data, grouping_attribute, groups, save_as_csv=False
 
     # Sort by attribute "to_color_old"
     grouped_delta_vectors = [[] for _ in range(len(groups))]
-    sorted_out_list = []
     for _, row in delta_vectors.iterrows():
-        sorted_out = True
         for index, group_condition in groups:
             if group_condition(row[f"{grouping_attribute}_old"]):
                 # Remove the grouping_attribute_old-entry. From here on, it is no longer needed.
                 grouped_delta_vectors[index].append(list(row)[:len(row) - 1])
-                sorted_out = False
                 break
-        if sorted_out:
-            sorted_out_list.append(list(row)[:len(row) - 1])
 
     amount_ppl_in_group = []
     for i in range(len(grouped_delta_vectors)):

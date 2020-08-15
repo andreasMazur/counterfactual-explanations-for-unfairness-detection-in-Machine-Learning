@@ -146,6 +146,17 @@ def read_compas_data():
 
     # One-hot encoding for the attribute 'race'
     recidivism_data = pd.get_dummies(recidivism_data)
+    recidivism_data_concealed = recidivism_data.copy()
+
+    # Conceal sensitive attributes
+    recidivism_data_concealed["age"] = np.zeros(recidivism_data_concealed.shape[0])
+    recidivism_data_concealed["sex"] = np.zeros(recidivism_data_concealed.shape[0])
+    recidivism_data_concealed["race_African-American"] = np.zeros(recidivism_data_concealed.shape[0])
+    recidivism_data_concealed["race_Asian"] = np.zeros(recidivism_data_concealed.shape[0])
+    recidivism_data_concealed["race_Caucasian"] = np.zeros(recidivism_data_concealed.shape[0])
+    recidivism_data_concealed["race_Hispanic"] = np.zeros(recidivism_data_concealed.shape[0])
+    recidivism_data_concealed["race_Native American"] = np.zeros(recidivism_data_concealed.shape[0])
+    recidivism_data_concealed["race_Other"] = np.zeros(recidivism_data_concealed.shape[0])
 
     print(recidivism_data.info())
-    return recidivism_data, label
+    return recidivism_data, label, recidivism_data_concealed

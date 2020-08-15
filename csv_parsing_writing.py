@@ -73,7 +73,7 @@ def read_result(file_name, skip_cf=False):
     return data_dict
 
 
-def read_compas_data(remove_sens_attr=False):
+def read_compas_data():
     """
     Reads the 'compas-scores-two-years.csv'-file from:
 
@@ -146,17 +146,6 @@ def read_compas_data(remove_sens_attr=False):
 
     # One-hot encoding for the attribute 'race'
     recidivism_data = pd.get_dummies(recidivism_data)
-
-    # Remove information about sensitive attributes
-    if remove_sens_attr:
-        recidivism_data.loc[:, "sex"] = 0
-        recidivism_data.loc[:, "age"] = 0
-        recidivism_data["race_African-American"] = np.ones(recidivism_data.shape[0])
-        recidivism_data["race_Asian"] = np.zeros(recidivism_data.shape[0])
-        recidivism_data["race_Caucasian"] = np.zeros(recidivism_data.shape[0])
-        recidivism_data["race_Hispanic"] = np.zeros(recidivism_data.shape[0])
-        recidivism_data["race_Native American"] = np.zeros(recidivism_data.shape[0])
-        recidivism_data["race_Other"] = np.zeros(recidivism_data.shape[0])
 
     print(recidivism_data.info())
     return recidivism_data, label

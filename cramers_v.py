@@ -38,8 +38,11 @@ def bias_corrected_cramers_V(attribute1, attribute2):
     c_tilde = c - 1 / (n - 1) * (c - 1) ** 2
     Phi = (chi2_value / n) - 1 / (n - 1) * (r - 1) * (c - 1)
     Phi_plus = max(0, Phi)
-    cramers_corrected_v = np.sqrt(Phi_plus / min(r_tilde - 1, c_tilde - 1))
-    return cramers_corrected_v
+    if r_tilde - 1 > 0 and c_tilde - 1 > 0:
+        cramers_corrected_v = np.sqrt(Phi_plus / min(r_tilde - 1, c_tilde - 1))
+        return cramers_corrected_v
+    else:
+        return 0
 
 
 def compute_correlations(data):

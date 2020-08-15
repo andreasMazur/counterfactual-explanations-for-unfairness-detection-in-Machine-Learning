@@ -217,7 +217,11 @@ def process_data(meta_data):
     data = meta_data.data.to_numpy()
     for i, vector in enumerate(data):
         vector_label = meta_data.classifier.predict(vector.reshape(1, -1))[0]
-        x_cf, y_cf = compute_cf(meta_data, vector)
+        try:
+            x_cf, y_cf = compute_cf(meta_data, vector)
+        except ValueError:
+            print("Problem infeasible for:", vector)
+            continue
         not_rounded = False
         if meta_data.relaxation:
             x_cf = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_

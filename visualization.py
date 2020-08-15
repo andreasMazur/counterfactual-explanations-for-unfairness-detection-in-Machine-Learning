@@ -41,11 +41,23 @@ def plot_histogram(plot_title, data, group_names, x_axis, filename, store_plots=
     if len(data) != len(group_names):
         raise Exception("Unequal amount of group names and groups.")
 
-    fig = go.Figure()
-    for i in range(len(data)):
-        fig.add_trace(go.Bar(x=x_axis, y=data[i], name=group_names[i]))
+    # Check if we have more than one group
+    amount_groups = 0
+    index = 0
+    for i, group in enumerate(data):
+        if not all(changes == 0 for changes in group):
+            index = i
+            amount_groups += 1
 
-    fig.update_layout(barmode='relative', title_text=plot_title)
+    fig = go.Figure()
+    # If there is only one group, leave the trace-names away
+    if amount_groups == 1:
+        fig.add_trace(go.Bar(x=x_axis, y=data[index]))
+        fig.update_layout(title_text=plot_title)
+    else:
+        for i in range(len(data)):
+            fig.add_trace(go.Bar(x=x_axis, y=data[i], name=group_names[i]))
+        fig.update_layout(barmode='relative', title_text=plot_title)
 
     # Decide to store or simply show the plots
     if store_plots:
@@ -61,18 +73,6 @@ def create_plots():
     from the pre-processed data set. Then, it groups the data and
     plots figures for the groups.
     """
-    # Ask, if pictures should be saved.
-    dont_stop = True
-    save_pictures = False
-    while dont_stop:
-        plotly_orca = input("Do you want to store the figures? (requires plotly-orca package) (y/n):")
-        if plotly_orca == "y":
-            save_pictures = True
-            dont_stop = False
-        elif plotly_orca == "n":
-            dont_stop = False
-        else:
-            print("Write 'y' for 'yes' or 'n' for no.")
 
     # Plot Cramer's V values
     data_set = read_result("x_values.csv", True)
@@ -122,6 +122,19 @@ def create_plots():
                                                      , filename_changes=CHG_PER_GROUP_FILENAMES[5]
                                                      , filename_ppl=AMT_PER_GROUP_FILENAMES[5])
 
+    # Ask, if pictures should be saved.
+    dont_stop = True
+    save_pictures = False
+    while dont_stop:
+        plotly_orca = input("\nDo you want to store the figures? (requires plotly-orca package) (y/n):")
+        if plotly_orca == "y":
+            save_pictures = True
+            dont_stop = False
+        elif plotly_orca == "n":
+            dont_stop = False
+        else:
+            print("Write 'y' for 'yes' or 'n' for no.")
+
     # Compute the histograms (colored by race)
     race_names = list(map(lambda a: a[5:], ATTRIBUTE_NAMES[ONE_HOT_VECTOR_START_INDEX:]))
     plot_histogram("Integer Linear Programming", changes_per_race, race_names, COLUMN_NAMES, "cf", save_pictures)
@@ -136,11 +149,11 @@ def create_plots():
                    save_pictures)
 
     # Compute the histograms (colored by age)
-    plot_histogram("Integer Linear Programming", changes_per_age, ["under the age of 26", "older than age of 25"],
+    plot_histogram("Integer Linear Programming", changes_per_age, ["under the age of 26", "over the age of 25"],
                    COLUMN_NAMES, "cf_red_blue_age",
                    save_pictures)
     plot_histogram("Integer Linear Programming with Relaxation", wr_changes_per_age,
-                   ["under the age of 26", "older than age of 25"],
+                   ["under the age of 26", "over the age of 25"],
                    COLUMN_NAMES, "cf_wr_red_blue_age",
                    save_pictures)
 

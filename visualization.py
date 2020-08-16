@@ -101,7 +101,7 @@ def create_plots():
                                                      , filename_changes=CHG_PER_GROUP_FILENAMES[3]
                                                      , filename_ppl=AMT_PER_GROUP_FILENAMES[3])
 
-    grouping_conditions_age = [(0, lambda p: p <= 25), (1, lambda p: p > 25)]
+    grouping_conditions_age = [(0, lambda p: p <= 24), (1, lambda p: p > 24)]
     changes_per_age, _ = count_changes_for_groups(valid_cf_npa, "age", grouping_conditions_age, True
                                                   , filename_changes=CHG_PER_GROUP_FILENAMES[4]
                                                   , filename_ppl=AMT_PER_GROUP_FILENAMES[4])
@@ -136,11 +136,11 @@ def create_plots():
                    save_pictures)
 
     # Compute the histograms (colored by age)
-    plot_histogram("Integer Linear Programming", changes_per_age, ["under the age of 26", "over the age of 25"],
+    plot_histogram("Integer Linear Programming", changes_per_age, ["under the age of 25", "over the age of 24"],
                    COLUMN_NAMES, "cf_red_blue_age",
                    save_pictures)
     plot_histogram("Integer Linear Programming with Relaxation", wr_changes_per_age,
-                   ["under the age of 26", "over the age of 25"],
+                   ["under the age of 25", "over the age of 24"],
                    COLUMN_NAMES, "cf_wr_red_blue_age",
                    save_pictures)
 

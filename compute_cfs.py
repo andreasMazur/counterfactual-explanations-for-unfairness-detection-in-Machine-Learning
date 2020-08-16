@@ -9,7 +9,7 @@ from sklearn.linear_model import LogisticRegression
 
 import test_counterfactual as tc
 from csv_parsing_writing import read_compas_data, store_result
-from test_counterfactual import VECTOR_INDEX, VECTOR_DIMENSION
+from test_counterfactual import VECTOR_INDEX, VECTOR_DIMENSION, ONE_HOT_VECTOR_START_INDEX
 
 
 class MetaData:
@@ -38,11 +38,25 @@ class MetaData:
         self.classifier = classifier
 
 
+def choose_descendant(x1, x2, w, b, y, index):
+    if tc.in_boundaries(x1, [index]) and tc.in_boundaries(x2, [index]):
+        result = rounding(x1, w, b, y, index + 1)
+        if result is None:
+            return rounding(x2, w, b, y, index + 1)
+        else:
+            return result
+    elif tc.in_boundaries(x1, [index]):
+        return rounding(x1, w, b, y, index + 1)
+    elif tc.in_boundaries(x2, [index]):
+        return rounding(x2, w, b, y, index + 1)
+    else:
+        return None
+
+
 def rounding(x, w, b, y, index):
     """
     A function to produce a tree in order to get a correctly
     rounded integer vector with respect to its class.
-
     :param x: 'numpy.ndarray'
               The counterfactual that shall be rounded
     :param w: 'numpy.ndarray'
@@ -65,33 +79,24 @@ def rounding(x, w, b, y, index):
 
     # Recursion step
     x_copy = x.copy()
+    index_value = x[index]
     x[index] = math.floor(x[index])
     x_copy[index] = math.ceil(x_copy[index])
-    if tc.in_boundaries(x, [index]) and tc.in_boundaries(x_copy, [index]):
-        result = rounding(x, w, b, y, index + 1)
-        if result is None:
-            return rounding(x_copy, w, b, y, index + 1)
-        else:
-            return result
-    elif tc.in_boundaries(x, [index]):
-        return rounding(x, w, b, y, index + 1)
-    elif tc.in_boundaries(x_copy, [index]):
-        return rounding(x_copy, w, b, y, index + 1)
+    if index_value - np.round(index_value) < 0:
+        return choose_descendant(x_copy, x, w, b, y, index)
     else:
-        return None
+        return choose_descendant(x, x_copy, w, b, y, index)
 
 
 def manhatten_dist(x, x_cf):
     """
     The usual Manhatten-distance as known.
-
     :param x: 'numpy.ndarray'
                The original vector.
     :param x_cf: 'cvxpy.expression.variable.Variable'
                  The counterfactual explanation for 'x'.
     :return: sum: 'int'
                   The manhatten distance between x and x_cf.
-
     """
     sum = 0
     for j in range(x.shape[0]):
@@ -103,13 +108,10 @@ def compute_cf(meta_data, vector):
     """
     The function that solves the optimization problem for computing
     counterfactual explanations, that was phrased in:
-
     'On the computation of counterfactual explanations -- A survey
     2019 by André Artelt and Barbara Hammer'
-
     with an extra few boundary constraints, that were stated in the
     bachelor thesis.
-
     :param meta_data: 'MetaData'
                       Carries information about how the calculation
                       shall be structured.
@@ -190,7 +192,6 @@ def process_data(meta_data):
     """
     The function that initializes and organizes the computation
     of the counterfactuals for the pre-processed data.
-
     :param meta_data: 'MetaData'
                       Carries information about how the calculation
                       shall be structured.
@@ -217,9 +218,13 @@ def process_data(meta_data):
     data = meta_data.data.to_numpy()
     for i, vector in enumerate(data):
         vector_label = meta_data.classifier.predict(vector.reshape(1, -1))[0]
-        x_cf, y_cf = compute_cf(meta_data, vector)
-
+        try:
+            x_cf, y_cf = compute_cf(meta_data, vector)
+        except ValueError:
+            print("\nNo counterfactual found for:", vector)
+            continue
         not_rounded = False
+
         if meta_data.relaxation:
             x_cf = rounding(x_cf, meta_data.classifier.coef_[0], meta_data.classifier.intercept_
                             , 1 - vector_label, 0)
@@ -235,6 +240,7 @@ def process_data(meta_data):
             # where we actually should have zero-entries, when we count the changes.
             # See 'count_changes_for_groups' for further information.
             x_cf = np.round(x_cf)
+
         if not_rounded:
             result["no_rounding_found"]["x"].append(list(vector))
             result["no_rounding_found"]["y"].append(vector_label)
@@ -250,20 +256,22 @@ def process_data(meta_data):
             result["valid_cf"]["y"].append(vector_label)
             result["valid_cf"]["x_cf"].append(list(x_cf))
             result["valid_cf"]["y_cf"].append(y_cf)
+
         sys.stdout.write(
             f"\rComputing counterfactuals for experiment: '{meta_data.result_name}'. {i / len(data) * 100 :.2f}% complete.")
         sys.stdout.flush()
+
     return result
 
 
-def run_experiment():
+def run_experiment(without_sens_attributes):
     """
     Initializes the pre-processing of the data and the computation
     of the counterfactuals. Furthermore, it prints the result of the
     counterfactual-computation process.
     """
     # Read the data from 'compas-scores-two-years'
-    recidivism_data, label = read_compas_data()
+    recidivism_data, label, recidivism_data_concealed = read_compas_data()
 
     # Export filtered data
     pd.DataFrame({"x": recidivism_data.values.tolist(), "y": label}).to_csv("x_values.csv"
@@ -271,7 +279,11 @@ def run_experiment():
                                                                             , quoting=csv.QUOTE_NONE)
 
     # Split the data in a train- and a test set
-    X_train, X_test, y_train, y_test = train_test_split(recidivism_data, label, test_size=0.33, random_state=1337)
+    if without_sens_attributes:
+        X_train, X_test, y_train, y_test = train_test_split(recidivism_data_concealed, label, test_size=0.33,
+                                                            random_state=1337)
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(recidivism_data, label, test_size=0.33, random_state=1337)
 
     # Train the logistic regression
     log_reg = LogisticRegression(max_iter=400).fit(X_train, y_train)
@@ -282,6 +294,7 @@ def run_experiment():
     ##### COMPUTING COUNTERFACTUALS #####
 
     # 1. set of counterfactuals: ILP
+
     meta_data = MetaData(recidivism_data, cp.CBC, "Integer Linear Programming", False, log_reg)
     ILP_npa = process_data(meta_data)
     results.append(ILP_npa)
@@ -294,7 +307,6 @@ def run_experiment():
     store_result(ILP_wr_npa, "valid_cf", "cf_wr")
 
     ##### REPORT RESULTS #####
-
     print("\n")
     print("Computation finished.")
     for res in results:
@@ -310,7 +322,6 @@ def run_experiment():
     print("Parameter-values of the logistic regression:")
     print(f"w = {log_reg.coef_[0]}")
     print(f"b = {log_reg.intercept_}")
-
 
 if __name__ == "__main__":
     run_experiment()
